@@ -3,6 +3,15 @@
 이 문서는 GitHub에서 각 버전에 어떤 변경이 반영되었는지 빠르게 확인하기 위한 기록입니다.
 새 기능을 배포할 때마다 최신 항목을 위에 추가합니다.
 
+## 2026-07-06
+
+### 저장소명 researchsupporter 반영
+- 커밋: `진행 중`
+- GitHub 저장소명 변경에 맞춰 로컬 `origin` remote를 `https://github.com/predict59/researchsupporter.git`로 변경했습니다.
+- GitHub Pages 배포 경로가 새 저장소명과 맞도록 Vite `base`를 `/researchsupporter/`로 변경했습니다.
+- `package.json`과 `package-lock.json`의 프로젝트명을 `researchsupporter`로 통일했습니다.
+- 기존 `priceresearchsupporter` 설정 참조가 남아있지 않은지 확인했습니다.
+
 ## 2026-07-02
 
 ### 거리 표시 갱신 및 담당매장 관리 정리
