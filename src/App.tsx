@@ -1843,7 +1843,7 @@ function StoreAssignmentPanel({ stores, totalStores, statsByStore, geocoding, ge
         </div>
         <div className="assignment-location-actions">
           <button type="button" onClick={onGeocodeMissing} disabled={geocoding || missingCoordinateCount === 0}>{geocoding ? "검색 중" : "누락 위치만 가져오기"}</button>
-          <button type="button" onClick={onGeocodeAll} disabled={geocoding || assignedCount === 0}>담당매장 위치 갱신</button>
+          <button type="button" onClick={onGeocodeAll} disabled={geocoding || assignedCount === 0}>전체 위치 가져오기</button>
         </div>
       </div>
       {geocodeMessage && <p className="map-location-message">{geocodeMessage}</p>}
