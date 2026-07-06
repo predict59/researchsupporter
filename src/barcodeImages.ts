@@ -55,12 +55,28 @@ function relationMap(xml: string, basePath: string) {
   return map;
 }
 
+function workbookSheetPaths(workbookXml: string, workbookRelsXml: string) {
+  const doc = parseXml(workbookXml);
+  const workbookRels = relationMap(workbookRelsXml, "xl/workbook.xml");
+  const map = new Map<string, string>();
+  Array.from(doc.getElementsByTagName("sheet")).forEach((node) => {
+    const name = node.getAttribute("name");
+    const rid = node.getAttribute("r:id") ?? node.getAttribute("id");
+    const sheetPath = rid ? workbookRels.get(rid) : "";
+    if (name && sheetPath) map.set(name, sheetPath);
+  });
+  return map;
+}
+
 function barcodeRowsFromSheet(sheet: XLSX.WorkSheet): BarcodeRow[] {
   const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "" });
-  const headerIndex = matrix.findIndex((row) => row.map(clean).some((value) => value.includes("바코드")));
+  const headerIndex = matrix.findIndex((row) => {
+    const values = row.map(clean);
+    return values.includes("순번") && values.includes("물품명") && values.includes("바코드");
+  });
   if (headerIndex === -1) return [];
   const headers = matrix[headerIndex].map(clean);
-  const barcodeColumn = headers.findIndex((header) => header.includes("바코드"));
+  const barcodeColumn = headers.findIndex((header) => header === "바코드");
   if (barcodeColumn === -1) return [];
   return matrix
     .slice(headerIndex + 1)
@@ -86,14 +102,18 @@ export async function extractBarcodeImages(source: Blob | ArrayBuffer) {
   const workbook = XLSX.read(buffer, { type: "array" });
   const zip = await JSZip.loadAsync(buffer);
   const index: Record<string, string> = {};
+  const workbookXml = await zip.file("xl/workbook.xml")?.async("string");
+  const workbookRelsXml = await zip.file("xl/_rels/workbook.xml.rels")?.async("string");
+  const sheetPathByName = workbookXml && workbookRelsXml ? workbookSheetPaths(workbookXml, workbookRelsXml) : new Map<string, string>();
 
   for (const [sheetIndex, sheetName] of workbook.SheetNames.entries()) {
     const rows = barcodeRowsFromSheet(workbook.Sheets[sheetName]);
     if (!rows.length) continue;
 
-    const sheetPath = `xl/worksheets/sheet${sheetIndex + 1}.xml`;
+    const sheetPath = sheetPathByName.get(sheetName) ?? `xl/worksheets/sheet${sheetIndex + 1}.xml`;
     const sheetXml = await zip.file(sheetPath)?.async("string");
-    const sheetRelsXml = await zip.file(`xl/worksheets/_rels/sheet${sheetIndex + 1}.xml.rels`)?.async("string");
+    const sheetFileName = sheetPath.slice(sheetPath.lastIndexOf("/") + 1);
+    const sheetRelsXml = await zip.file(`${sheetPath.slice(0, sheetPath.lastIndexOf("/"))}/_rels/${sheetFileName}.rels`)?.async("string");
     if (!sheetXml || !sheetRelsXml) continue;
 
     const sheetDoc = parseXml(sheetXml);
