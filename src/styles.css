@@ -1549,6 +1549,16 @@ textarea { min-height: 110px; resize: vertical; }
   max-height: 150px;
   object-fit: contain;
 }
+.barcode-flow-note {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #ecfeff;
+  color: #0e7490;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.45;
+}
 .barcode-pos-box {
   display: grid;
   gap: 8px;

@@ -42,6 +42,7 @@ const BASE_CONTACTS_URL = `${import.meta.env.BASE_URL}data/base-contacts.xlsx`;
 const BARCODE_INDEX_URL = `${import.meta.env.BASE_URL}data/barcode-index.json`;
 type BarcodeImageIndex = Record<string, string>;
 type PriceCandidate = { value: number; score: number; source: "comma" | "plain" };
+type PriceOcrWorker = Awaited<ReturnType<typeof import("tesseract.js")["createWorker"]>>;
 const PRICE_KEYWORDS = /원|가격|정상|판매|할인|행사|특가|세일|SALE|sale|올리브|카드|멤버십|회원|쿠폰/;
 const PRICE_MAX_VALUE = 999999;
 type GeocodeResult = { latitude: number; longitude: number; displayName?: string };
@@ -97,6 +98,7 @@ const barcodeImageSrc = (item: SurveyItem, index: BarcodeImageIndex) => {
   const path = index[onlyDigits(item.barcode)];
   return path ? `${import.meta.env.BASE_URL}${path}` : "";
 };
+let priceOcrWorkerPromise: Promise<PriceOcrWorker> | null = null;
 
 function barcodeScanRegions(width: number, height: number) {
   const regions = [{ x: 0, y: 0, width, height }];
@@ -269,18 +271,28 @@ async function createPriceOcrSources(blob: Blob) {
   }
 }
 
-async function detectPriceCandidatesFromBlob(blob: Blob) {
+async function getPriceOcrWorker() {
   const tesseract = await import("tesseract.js");
-  const worker = await tesseract.createWorker("eng", tesseract.OEM.LSTM_ONLY, {
-    logger: () => undefined,
-  });
+  if (!priceOcrWorkerPromise) {
+    priceOcrWorkerPromise = (async () => {
+      const worker = await tesseract.createWorker("eng", tesseract.OEM.LSTM_ONLY, {
+        logger: () => undefined,
+      });
+      await worker.setParameters({
+        tessedit_pageseg_mode: tesseract.PSM.SPARSE_TEXT,
+        tessedit_char_whitelist: "0123456789,.",
+        preserve_interword_spaces: "1",
+        user_defined_dpi: "300",
+      });
+      return worker;
+    })();
+  }
+  return priceOcrWorkerPromise;
+}
+
+async function detectPriceCandidatesFromBlob(blob: Blob) {
+  const worker = await getPriceOcrWorker();
   try {
-    await worker.setParameters({
-      tessedit_pageseg_mode: tesseract.PSM.SPARSE_TEXT,
-      tessedit_char_whitelist: "0123456789,.",
-      preserve_interword_spaces: "1",
-      user_defined_dpi: "300",
-    });
     const sources = await createPriceOcrSources(blob);
     const merged = new Map<number, PriceCandidate>();
     for (const source of sources) {
@@ -297,8 +309,9 @@ async function detectPriceCandidatesFromBlob(blob: Blob) {
       await new Promise((resolve) => window.setTimeout(resolve, 0));
     }
     return Array.from(merged.values()).sort((a, b) => b.score - a.score || b.value - a.value).slice(0, 4);
-  } finally {
-    await worker.terminate();
+  } catch (error) {
+    priceOcrWorkerPromise = null;
+    throw error;
   }
 }
 
@@ -374,6 +387,7 @@ function App() {
   const [filter, setFilter] = useState<Filter>("전체");
   const [barcodeIndex, setBarcodeIndex] = useState<BarcodeImageIndex>({});
   const [barcodeModalItemId, setBarcodeModalItemId] = useState("");
+  const [barcodeReturnItemId, setBarcodeReturnItemId] = useState("");
   const [baseMessage, setBaseMessage] = useState("");
   const [isBaseLoading, setIsBaseLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -829,34 +843,26 @@ function App() {
     return true;
   }
 
-  async function saveListPosPhoto(item: SurveyItem, file: File) {
-    const existing = photos.filter((photo) => photo.itemId === item.id && photo.type === "POS_RECEIPT");
-    await Promise.all(existing.map((photo) => deletePhoto(photo.id)));
-    const resized = await resizePhoto(file);
-    const photo: SurveyPhoto = {
-      id: uid("photo"),
-      region: item.region,
-      itemId: item.id,
-      storeId: item.storeId,
-      type: "POS_RECEIPT",
-      blob: resized.blob,
-      originalName: file.name,
-      mimeType: resized.mimeType,
-      takenAt: now(),
-    };
-    await putPhoto(photo);
-    await refresh(item.region);
-  }
-
-  async function removeListPosPhoto(photo: SurveyPhoto) {
-    await deletePhoto(photo.id);
-    await refresh(photo.region);
-  }
-
   function moveBarcodeModal(direction: -1 | 1) {
     const index = barcodeModalItems.findIndex((item) => item.id === barcodeModalItemId);
     const next = barcodeModalItems[index + direction];
     if (next) setBarcodeModalItemId(next.id);
+  }
+
+  function openItemFromBarcodeModal(itemId: string) {
+    setBarcodeReturnItemId(itemId);
+    setSelectedItemId(itemId);
+    setBarcodeModalItemId("");
+    setView("item");
+  }
+
+  function returnToBarcodeModal(itemId: string) {
+    setSelectedItemId(itemId);
+    setView("items");
+    window.setTimeout(() => {
+      document.getElementById(`item-card-${itemId}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+      setBarcodeModalItemId(itemId);
+    }, 80);
   }
 
   async function setStoreOperatingStatus(status: StoreOperatingStatus | "") {
@@ -1364,7 +1370,7 @@ function App() {
               const eligibility = getPriceEligibility(item);
               const itemPhotoMissing = item.status === "완료" && requiredPhotoLabels(item, photos.filter((photo) => photo.storeId === item.storeId)).length > 0;
               return (
-                <article className={`card compact item-card ${selectedItemId === item.id ? "focused" : ""} ${item.status === "완료" ? "completed" : ""}`} key={item.id}>
+                <article id={`item-card-${item.id}`} className={`card compact item-card ${selectedItemId === item.id ? "focused" : ""} ${item.status === "완료" ? "completed" : ""}`} key={item.id}>
                   <div className="item-card-head"><h2 className="item-title"><span className="item-code">{item.itemNo}</span><span>{item.productName}</span></h2><div className="item-badge-stack">{item.status !== "완료" && <Badge text={item.status} />}{itemPhotoMissing && <span className="badge badge-photo-missing">사진누락</span>}</div></div>
                   <div className={`item-card-body ${previewPhoto ? "" : "no-thumb"}`}>
                     <PhotoPreview photo={previewPhoto} className="item-thumb" />
@@ -1386,7 +1392,7 @@ function App() {
       )}
 
       {view === "item" && selectedItem && (
-        <ItemEditor item={selectedItem} storeItems={storeItems} storeOperatingStatus={stores.find((store) => store.id === selectedItem.storeId)?.operatingStatus ?? ""} photos={photos.filter((photo) => photo.storeId === selectedItem.storeId)} onSave={saveItem} onSaved={async () => { await refresh(selectedItem.region); }} onList={(focusId) => { if (focusId) setSelectedItemId(focusId); setView("items"); }} onStoreList={() => { setFilter("전체"); setSelectedStoreId(selectedItem.storeId); setView("workspace"); }} onMove={(id) => setSelectedItemId(id)} askConfirm={askConfirm} />
+        <ItemEditor item={selectedItem} storeItems={storeItems} storeOperatingStatus={stores.find((store) => store.id === selectedItem.storeId)?.operatingStatus ?? ""} photos={photos.filter((photo) => photo.storeId === selectedItem.storeId)} fromBarcodeFlow={barcodeReturnItemId === selectedItem.id} onSave={saveItem} onSaved={async () => { await refresh(selectedItem.region); }} onList={(focusId) => { if (focusId) setSelectedItemId(focusId); setView("items"); }} onStoreList={() => { setFilter("전체"); setSelectedStoreId(selectedItem.storeId); setView("workspace"); }} onMove={(id) => setSelectedItemId(id)} onBarcodeReturn={returnToBarcodeModal} askConfirm={askConfirm} />
       )}
 
       {view === "validation" && (
@@ -1423,13 +1429,11 @@ function App() {
         <BarcodePhotoModal
           item={barcodeModalItem}
           barcodeSrc={barcodeImageSrc(barcodeModalItem, barcodeIndex)}
-          posPhoto={photos.find((photo) => photo.itemId === barcodeModalItem.id && photo.type === "POS_RECEIPT")}
           currentIndex={Math.max(0, barcodeModalItems.findIndex((item) => item.id === barcodeModalItem.id))}
           totalCount={barcodeModalItems.length}
           canPrev={barcodeModalItems.findIndex((item) => item.id === barcodeModalItem.id) > 0}
           canNext={barcodeModalItems.findIndex((item) => item.id === barcodeModalItem.id) < barcodeModalItems.length - 1}
-          onFile={(file) => saveListPosPhoto(barcodeModalItem, file)}
-          onDelete={(photo) => removeListPosPhoto(photo)}
+          onOpenItem={() => openItemFromBarcodeModal(barcodeModalItem.id)}
           onPrev={() => moveBarcodeModal(-1)}
           onNext={() => moveBarcodeModal(1)}
           onClose={() => setBarcodeModalItemId("")}
@@ -1558,26 +1562,22 @@ function StorageModal({ estimate, photoCount, onRefresh, onClose }: { estimate?:
 function BarcodePhotoModal({
   item,
   barcodeSrc,
-  posPhoto,
   currentIndex,
   totalCount,
   canPrev,
   canNext,
-  onFile,
-  onDelete,
+  onOpenItem,
   onPrev,
   onNext,
   onClose,
 }: {
   item: SurveyItem;
   barcodeSrc: string;
-  posPhoto?: SurveyPhoto;
   currentIndex: number;
   totalCount: number;
   canPrev: boolean;
   canNext: boolean;
-  onFile: (file: File) => void | Promise<void>;
-  onDelete: (photo: SurveyPhoto) => void | Promise<void>;
+  onOpenItem: () => void;
   onPrev: () => void;
   onNext: () => void;
   onClose: () => void;
@@ -1604,22 +1604,8 @@ function BarcodePhotoModal({
           ) : (
             <p className="small-help warn">등록된 바코드 이미지가 없습니다.</p>
           )}
-          <div className={`barcode-pos-box ${posPhoto ? "has-photo" : ""}`}>
-            <div className="photo-slot-head">
-              <div>
-                <strong>POS/영수증사진</strong>
-                <span>미진열 상품의 POS 조회 화면 또는 영수증을 촬영</span>
-              </div>
-            </div>
-            {posPhoto ? (
-              <>
-                <PhotoPreview photo={posPhoto} />
-                <button type="button" className="danger" onClick={() => onDelete(posPhoto)}>지우기</button>
-              </>
-            ) : (
-              <PhotoInput label="촬영/선택" onFile={onFile} />
-            )}
-          </div>
+          <p className="barcode-flow-note">POS에서 이 바코드를 확인한 뒤 입력을 누르면 ③ 상태 입력 위치로 이동합니다.</p>
+          <button type="button" className="primary" onClick={onOpenItem}>입력</button>
           <div className="barcode-nav">
             <button type="button" disabled={!canPrev} onClick={onPrev}>이전</button>
             <button type="button" disabled={!canNext} onClick={onNext}>다음</button>
@@ -2151,7 +2137,7 @@ function PhotoInput({ id, label, onFile }: { id?: string; label: string; onFile:
   );
 }
 
-function ItemEditor({ item, storeItems, storeOperatingStatus, photos, onSave, onSaved, onList, onStoreList, onMove, askConfirm }: { item: SurveyItem; storeItems: SurveyItem[]; storeOperatingStatus: StoreOperatingStatus | ""; photos: SurveyPhoto[]; onSave: (item: SurveyItem, photoOverride?: SurveyPhoto[]) => Promise<boolean>; onSaved: () => Promise<void>; onList: (focusId?: string) => void; onStoreList: () => void; onMove: (id: string) => void; askConfirm: (options: ConfirmState) => Promise<boolean> }) {
+function ItemEditor({ item, storeItems, storeOperatingStatus, photos, fromBarcodeFlow, onSave, onSaved, onList, onStoreList, onMove, onBarcodeReturn, askConfirm }: { item: SurveyItem; storeItems: SurveyItem[]; storeOperatingStatus: StoreOperatingStatus | ""; photos: SurveyPhoto[]; fromBarcodeFlow?: boolean; onSave: (item: SurveyItem, photoOverride?: SurveyPhoto[]) => Promise<boolean>; onSaved: () => Promise<void>; onList: (focusId?: string) => void; onStoreList: () => void; onMove: (id: string) => void; onBarcodeReturn?: (id: string) => void; askConfirm: (options: ConfirmState) => Promise<boolean> }) {
   const [draft, setDraft] = useState(item);
   const [localPhotos, setLocalPhotos] = useState<SurveyPhoto[]>(photos);
   const [deletedPhotoIds, setDeletedPhotoIds] = useState<string[]>([]);
@@ -2173,6 +2159,13 @@ function ItemEditor({ item, storeItems, storeOperatingStatus, photos, onSave, on
     const timer = window.setTimeout(() => setSaveMessage(""), 5000);
     return () => window.clearTimeout(timer);
   }, [saveMessage]);
+  useEffect(() => {
+    if (!fromBarcodeFlow) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById("item-status-section")?.scrollIntoView({ block: "start", behavior: "smooth" });
+    }, 160);
+    return () => window.clearTimeout(timer);
+  }, [fromBarcodeFlow, item.id]);
   const update = (patch: Partial<SurveyItem>) => setDraft((old) => ({ ...old, ...patch, status: old.status === "미조사" ? "조사중" : old.status }));
   const missing = draft.normalDisplay ? requiredPhotoLabels(draft, localPhotos) : [];
   const itemPhotos = {
@@ -2211,7 +2204,7 @@ function ItemEditor({ item, storeItems, storeOperatingStatus, photos, onSave, on
     setDeletedPhotoIds((old) => [...old, ...oldPhotos.filter((photo) => !photo.id.startsWith("temp_")).map((photo) => photo.id)]);
     const photo: SurveyPhoto = { id: uid("temp_photo"), region: draft.region, storeId: draft.storeId, itemId: draft.id, type, blob: resized.blob, originalName: file.name, mimeType: resized.mimeType, takenAt: now() };
     setLocalPhotos((old) => [...old.filter((candidate) => !(candidate.itemId === draft.id && candidate.type === type)), photo]);
-    if (type === "PRODUCT_DISPLAY") {
+    if (type === "PRODUCT_DISPLAY" || type === "POS_RECEIPT") {
       setPhotoMessage("");
       void runPriceOcr(resized.blob);
       return;
@@ -2401,6 +2394,10 @@ function ItemEditor({ item, storeItems, storeOperatingStatus, photos, onSave, on
         await onSaved();
         setDraft((old) => ({ ...old, status: "완료" }));
         setSaveMessage(`저장 완료 · ${new Date().toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`);
+        if (fromBarcodeFlow && onBarcodeReturn) {
+          if (await askConfirm({ title: "저장되었습니다", message: "바코드 창으로 돌아갈까요?", confirmText: "이동", cancelText: "현재 품목 보기" })) onBarcodeReturn(draft.id);
+          return;
+        }
         const nextId = nextTodoId();
         if (nextId) {
           if (await askConfirm({ title: "저장되었습니다", message: "다음 미등록 상품으로 이동할까요?", confirmText: "이동", cancelText: "현재 품목 보기" })) onMove(nextId);
@@ -2418,7 +2415,10 @@ function ItemEditor({ item, storeItems, storeOperatingStatus, photos, onSave, on
     }
   };
   const goListWithoutSave = async () => {
-    if (await confirmLeaveIfDirty()) onList(draft.id);
+    if (await confirmLeaveIfDirty()) {
+      if (fromBarcodeFlow && onBarcodeReturn) onBarcodeReturn(draft.id);
+      else onList(draft.id);
+    }
   };
   const saveAndNext = async () => {
     const nextId = nextSequentialId();
@@ -2431,14 +2431,14 @@ function ItemEditor({ item, storeItems, storeOperatingStatus, photos, onSave, on
     <ItemContact item={draft} />
     <details className="panel" open><summary>① 국군복지단 제시정보</summary><Info item={draft} /></details>
     <section className="panel"><h2>② 실물 확인</h2><Choice label="진열여부" note="*조사표에는 정상진열로 표기" value={draft.normalDisplay} values={["O", "X"]} onChange={updateNormalDisplay} /><Choice label="규격일치" disabled={draft.normalDisplay !== "O"} value={draft.normalDisplay === "O" ? draft.specMatch : ""} values={["O", "X"]} onChange={(value) => update({ specMatch: value as SurveyItem["specMatch"] })} /><Choice label="바코드일치" disabled={draft.normalDisplay !== "O"} value={draft.normalDisplay === "O" ? draft.barcodeMatch : ""} values={["O", "X"]} onChange={(value) => update({ barcodeMatch: value as SurveyItem["barcodeMatch"] })} /></section>
-    <section className={`panel ${draft.normalDisplay === "X" ? "" : "disabled-block"}`}><h2>③ 상태 <small className="section-note">(정상진열 X 시 입력)</small></h2><Choice label="바코드 등록 여부" disabled={draft.normalDisplay !== "X"} value={draft.normalDisplay === "X" ? draft.barcodeRegistered : ""} values={["O", "X"]} onChange={(value) => update({ barcodeRegistered: value as SurveyItem["barcodeRegistered"] })} /><Choice label="판매여부" disabled={draft.normalDisplay !== "X"} value={draft.normalDisplay === "X" ? draft.abnormalStatus : ""} values={["미진열", "미판매"]} onChange={(value) => update({ abnormalStatus: value as SurveyItem["abnormalStatus"] })} /><Choice label="POS 조회 여부" disabled={draft.normalDisplay !== "X"} value={draft.normalDisplay === "X" ? draft.posChecked : ""} values={["조회함", "조회불가"]} onChange={updatePosChecked} /></section>
+    <section id="item-status-section" className={`panel ${draft.normalDisplay === "X" ? "" : "disabled-block"}`}><h2>③ 상태 <small className="section-note">(정상진열 X 시 입력)</small></h2><Choice label="바코드 등록 여부" disabled={draft.normalDisplay !== "X"} value={draft.normalDisplay === "X" ? draft.barcodeRegistered : ""} values={["O", "X"]} onChange={(value) => update({ barcodeRegistered: value as SurveyItem["barcodeRegistered"] })} /><Choice label="판매여부" disabled={draft.normalDisplay !== "X"} value={draft.normalDisplay === "X" ? draft.abnormalStatus : ""} values={["미진열", "미판매"]} onChange={(value) => update({ abnormalStatus: value as SurveyItem["abnormalStatus"] })} /><Choice label="POS 조회 여부" disabled={draft.normalDisplay !== "X"} value={draft.normalDisplay === "X" ? draft.posChecked : ""} values={["조회함", "조회불가"]} onChange={updatePosChecked} /></section>
     <section className="panel">
       <h2 className="section-title-row">④ 사진자료 {missing.length > 0 && <span className="inline-missing">사진누락: {missing.join(", ")}</span>}</h2>
       {!draft.normalDisplay && <p className="notice">먼저 ② 실물 확인에서 진열여부 O/X를 선택해 주세요.</p>}
       {draft.normalDisplay === "O" && <p className="small-help barcode-help">참고: 제품정보사진 촬영 시 브라우저가 지원하면 바코드를 자동 비교합니다.</p>}
       <PhotoSlot id="photo-product-display" label="제품진열사진" description="가격정보와 진열상품이 동시노출 되도록 촬영" disabled={draft.normalDisplay !== "O"} photo={itemPhotos.display} message={priceOcrMessage} messageTone={priceCandidates.length ? "ok" : priceOcrMessage.includes("중") ? "pending" : "warn"} onFile={(file) => upload("PRODUCT_DISPLAY", file)} onDelete={(photo) => { setDeletedPhotoIds((old) => photo.id.startsWith("temp_") ? old : [...old, photo.id]); setLocalPhotos((old) => old.filter((candidate) => candidate.id !== photo.id)); }} />
       <PhotoSlot id="photo-product-info" label="제품정보사진" description="상품후면 제품상세정보와 바코드 동시노출 되도록 촬영" disabled={draft.normalDisplay !== "O"} photo={itemPhotos.info} message={photoMessage} messageTone={photoMessage.includes("불일치") || photoMessage.includes("실패") || photoMessage.includes("못했습니다") ? "warn" : "ok"} onFile={(file) => upload("PRODUCT_INFO_BARCODE", file)} onDelete={(photo) => { setDeletedPhotoIds((old) => photo.id.startsWith("temp_") ? old : [...old, photo.id]); setLocalPhotos((old) => old.filter((candidate) => candidate.id !== photo.id)); }} />
-      <PhotoSlot id="photo-pos-receipt" label="POS/영수증사진" description="제품진열사진으로 가격정보 확인불가 시 POS기 또는 영수증 촬영" disabled={!draft.normalDisplay} photo={itemPhotos.pos} onFile={(file) => upload("POS_RECEIPT", file)} onDelete={(photo) => { setDeletedPhotoIds((old) => photo.id.startsWith("temp_") ? old : [...old, photo.id]); setLocalPhotos((old) => old.filter((candidate) => candidate.id !== photo.id)); }} />
+      <PhotoSlot id="photo-pos-receipt" label="POS/영수증사진" description="제품진열사진으로 가격정보 확인불가 시 POS기 또는 영수증 촬영" disabled={!draft.normalDisplay} photo={itemPhotos.pos} message={itemPhotos.pos ? priceOcrMessage : ""} messageTone={priceCandidates.length ? "ok" : priceOcrMessage.includes("중") ? "pending" : "warn"} onFile={(file) => upload("POS_RECEIPT", file)} onDelete={(photo) => { setDeletedPhotoIds((old) => photo.id.startsWith("temp_") ? old : [...old, photo.id]); setLocalPhotos((old) => old.filter((candidate) => candidate.id !== photo.id)); }} />
     </section>
     <section className={`panel price-panel ${priceBlocked ? "disabled-block" : ""}`}>
       <h2>⑤ 가격</h2>
