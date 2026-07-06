@@ -378,6 +378,7 @@ function App() {
   const [storageOpen, setStorageOpen] = useState(false);
   const [storageEstimate, setStorageEstimate] = useState<StorageEstimate | undefined>();
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [locationFocusTick, setLocationFocusTick] = useState(0);
   const [geocodeMessage, setGeocodeMessage] = useState("");
   const [geocoding, setGeocoding] = useState(false);
   const [photosReady, setPhotosReady] = useState(false);
@@ -500,8 +501,8 @@ function App() {
     return { settings: nextSettings, regions: nextRegions, stores: allStores, items: allItems };
   }
 
-  function locateUser() {
-    if (locatePromiseRef.current) return locatePromiseRef.current;
+  function locateUser(options: { force?: boolean; focus?: boolean } = {}) {
+    if (locatePromiseRef.current && !options.force) return locatePromiseRef.current;
     const request = new Promise<{ latitude: number; longitude: number } | null>((resolve) => {
       if (!navigator.geolocation) {
         locatePromiseRef.current = null;
@@ -512,6 +513,7 @@ function App() {
         (position) => {
           const next = { latitude: position.coords.latitude, longitude: position.coords.longitude };
           setUserLocation(next);
+          if (options.focus) setLocationFocusTick((value) => value + 1);
           locatePromiseRef.current = null;
           resolve(next);
         },
@@ -519,7 +521,7 @@ function App() {
           locatePromiseRef.current = null;
           resolve(null);
         },
-        { enableHighAccuracy: false, timeout: 3000, maximumAge: 300000 },
+        { enableHighAccuracy: options.force ?? false, timeout: options.force ? 6000 : 3000, maximumAge: options.force ? 0 : 300000 },
       );
     });
     locatePromiseRef.current = request;
@@ -689,6 +691,7 @@ function App() {
     setPhotosReady(false);
     setPhotos([]);
     setView("workspace");
+    void locateUser({ force: true });
     saveSettings(nextSettings).then(() => refresh(region));
   }
 
@@ -1199,13 +1202,14 @@ function App() {
               stores={assignedRegionStores}
               statsByStore={regionStatsByStore}
               userLocation={userLocation}
+              locationFocusTick={locationFocusTick}
               selectedStoreId={selectedStoreId}
               onOpen={(store) => openStore(store)}
               onContacts={(store) => setContactStoreId(store.id)}
               onToggle={(store) => setStoreAssigned(store, false)}
             />
           )}
-          <button type="button" className="location-fab" onClick={locateUser}>내 위치</button>
+          <button type="button" className="location-fab" onClick={() => locateUser({ force: true, focus: true })}>내 위치</button>
         </main>
       )}
 
@@ -1566,14 +1570,31 @@ function isStoreComplete(store: SurveyStore, stats: RegionStats) {
 }
 
 function StoreMoreMenu({ store, onAssignToggle }: { store: SurveyStore; onAssignToggle: () => void }) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: PointerEvent) => {
+      if (menuRef.current?.contains(event.target as Node)) return;
+      setOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [open]);
+  const closeAfter = (action?: () => void) => {
+    action?.();
+    setOpen(false);
+  };
   return (
-    <details className="card-menu">
-      <summary aria-label="매장 메뉴"><MoreVertical size={18} /></summary>
-      <div className="menu-popover">
-        <button type="button" onClick={onAssignToggle}>{store.mapIncluded === true ? "담당매장 제외" : "담당매장 포함"}</button>
-        {mapLinks(store.storeAddress).map(([name, href]) => <a key={name} href={href} target="_blank">{name} 지도 보기</a>)}
-      </div>
-    </details>
+    <div className={`card-menu ${open ? "open" : ""}`} ref={menuRef}>
+      <button type="button" className="card-menu-trigger" aria-label="매장 메뉴" aria-expanded={open} onClick={() => setOpen((value) => !value)}><MoreVertical size={18} /></button>
+      {open && (
+        <div className="menu-popover">
+          <button type="button" onClick={() => closeAfter(onAssignToggle)}>{store.mapIncluded === true ? "담당매장 제외" : "담당매장 포함"}</button>
+          {mapLinks(store.storeAddress).map(([name, href]) => <a key={name} href={href} target="_blank" onClick={() => setOpen(false)}>{name} 지도 보기</a>)}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1620,8 +1641,8 @@ function StoreCard({
         <div className="progress-line"><span style={{ width: `${percent}%` }} /></div>
       </div>
       <div className="store-meta">
-        {stats.photoMissing > 0 && <span className="store-missing">품목사진 누락 {stats.photoMissing.toLocaleString()}건</span>}
         <span className={`store-distance ${distanceText ? "" : "empty"}`}>{distanceText ? `현재 위치 ${distanceText}` : "현재 위치 -"}</span>
+        {stats.photoMissing > 0 && <span className="store-missing">사진 누락 {stats.photoMissing.toLocaleString()}건</span>}
         <span className="store-date">조사일: {latestSurveyDate}</span>
       </div>
       <div className="card-actions">
@@ -1632,12 +1653,12 @@ function StoreCard({
   );
 }
 
-function StoreMapView({ stores, statsByStore, userLocation, selectedStoreId, onOpen, onContacts, onToggle }: { stores: SurveyStore[]; statsByStore: Map<string, RegionStats>; userLocation: { latitude: number; longitude: number } | null; selectedStoreId: string; onOpen: (store: SurveyStore) => void; onContacts: (store: SurveyStore) => void; onToggle: (store: SurveyStore) => void | Promise<void> }) {
+function StoreMapView({ stores, statsByStore, userLocation, locationFocusTick, selectedStoreId, onOpen, onContacts, onToggle }: { stores: SurveyStore[]; statsByStore: Map<string, RegionStats>; userLocation: { latitude: number; longitude: number } | null; locationFocusTick: number; selectedStoreId: string; onOpen: (store: SurveyStore) => void; onContacts: (store: SurveyStore) => void; onToggle: (store: SurveyStore) => void | Promise<void> }) {
   const mapNode = useRef<HTMLDivElement | null>(null);
   const leafletMap = useRef<import("leaflet").Map | null>(null);
   const markerLayer = useRef<import("leaflet").LayerGroup | null>(null);
   const mappedStores = useMemo(() => stores.filter(hasStoreCoordinates), [stores]);
-  const initialActiveId = selectedStoreId && mappedStores.some((store) => store.id === selectedStoreId) ? selectedStoreId : mappedStores[0]?.id ?? "";
+  const initialActiveId = selectedStoreId && mappedStores.some((store) => store.id === selectedStoreId) ? selectedStoreId : "";
   const [activeStoreId, setActiveStoreId] = useState(initialActiveId);
   const [mapReady, setMapReady] = useState(0);
   const activeStore = stores.find((store) => store.id === activeStoreId);
@@ -1697,7 +1718,7 @@ function StoreMapView({ stores, statsByStore, userLocation, selectedStoreId, onO
         });
       };
       addTiles();
-      map.setView(userLocation ? [userLocation.latitude, userLocation.longitude] : [37.5665, 126.978], userLocation ? 13 : 11);
+      map.setView(userLocation ? [userLocation.latitude, userLocation.longitude] : [37.5665, 126.978], userLocation ? 15 : 12);
       setMapReady((value) => value + 1);
       window.requestAnimationFrame(() => map.invalidateSize());
       window.setTimeout(() => map.invalidateSize(), 120);
@@ -1738,7 +1759,7 @@ function StoreMapView({ stores, statsByStore, userLocation, selectedStoreId, onO
           .bindTooltip(`${store.storeName} · ${completed ? "완료" : "미완료"}`)
           .on("click", () => {
             setActiveStoreId(store.id);
-            map.setView(latLng, Math.min(Math.max(map.getZoom(), 13), 14), { animate: true });
+            map.setView(latLng, Math.min(Math.max(map.getZoom(), 15), 16), { animate: true });
           });
       });
       if (userLocation) {
@@ -1752,28 +1773,39 @@ function StoreMapView({ stores, statsByStore, userLocation, selectedStoreId, onO
           fillOpacity: 0.9,
         }).addTo(layer).bindTooltip("내 위치");
       }
-      const selectedStore = mappedStores.find((store) => store.id === selectedStoreId) ?? mappedStores.find((store) => store.id === activeStoreId);
-      if (selectedStore) {
-        map.setView([selectedStore.latitude!, selectedStore.longitude!], Math.min(Math.max(map.getZoom(), 13), 14));
-      } else if (userLocation) {
-        map.setView([userLocation.latitude, userLocation.longitude], Math.min(Math.max(map.getZoom(), 13), 14));
-      } else if (bounds.length) {
-        map.fitBounds(leaflet.latLngBounds(bounds), { padding: [28, 28], maxZoom: 13 });
-      }
       window.requestAnimationFrame(() => map.invalidateSize());
     });
     return () => {
       cancelled = true;
     };
-  }, [mapReady, mapSignature, mappedStores, statsByStore, selectedStoreId, userLocation, activeStoreId]);
+  }, [mapReady, mapSignature, mappedStores, statsByStore, userLocation]);
 
   useEffect(() => {
     if (selectedStoreId && mappedStores.some((store) => store.id === selectedStoreId)) {
       setActiveStoreId(selectedStoreId);
       return;
     }
-    if (!activeStoreId || !mappedStores.some((store) => store.id === activeStoreId)) setActiveStoreId(mappedStores[0]?.id ?? "");
+    if (activeStoreId && !mappedStores.some((store) => store.id === activeStoreId)) setActiveStoreId("");
   }, [selectedStoreId, mappedStores, activeStoreId]);
+
+  useEffect(() => {
+    const map = leafletMap.current;
+    if (!map || !mapReady) return;
+    const selectedStore = mappedStores.find((store) => store.id === selectedStoreId);
+    if (selectedStore) {
+      map.setView([selectedStore.latitude!, selectedStore.longitude!], Math.min(Math.max(map.getZoom(), 15), 16), { animate: false });
+      return;
+    }
+    if (userLocation) {
+      map.setView([userLocation.latitude, userLocation.longitude], Math.min(Math.max(map.getZoom(), 15), 16), { animate: false });
+    }
+  }, [mapReady, selectedStoreId, mappedStores, userLocation]);
+
+  useEffect(() => {
+    const map = leafletMap.current;
+    if (!map || !mapReady || !userLocation || !locationFocusTick) return;
+    map.setView([userLocation.latitude, userLocation.longitude], Math.min(Math.max(map.getZoom(), 15), 16), { animate: true });
+  }, [mapReady, userLocation, locationFocusTick]);
 
   return (
     <div className="map-page">

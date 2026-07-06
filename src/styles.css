@@ -1633,8 +1633,15 @@ textarea { min-height: 110px; resize: vertical; }
   white-space: nowrap;
   line-height: 1.32;
 }
-.card-menu { position: relative; }
-.card-menu summary {
+.card-menu {
+  position: relative;
+  z-index: 20;
+}
+.card-menu.open {
+  z-index: 1200;
+}
+.card-menu summary,
+.card-menu-trigger {
   list-style: none;
   width: 34px;
   height: 34px;
@@ -1645,13 +1652,14 @@ textarea { min-height: 110px; resize: vertical; }
   cursor: pointer;
   background: transparent;
 }
-.card-menu summary:hover { background: #eef2f4; }
+.card-menu summary:hover,
+.card-menu-trigger:hover { background: #eef2f4; }
 .card-menu summary::-webkit-details-marker { display: none; }
 .menu-popover {
   position: absolute;
   right: 0;
   top: 48px;
-  z-index: 5;
+  z-index: 1201;
   width: 190px;
   border: 1px solid #c9d2d8;
   border-radius: 8px;
@@ -1725,7 +1733,7 @@ textarea { min-height: 110px; resize: vertical; }
 }
 .store-meta {
   display: grid;
-  grid-template-columns: auto auto 1fr;
+  grid-template-columns: auto auto minmax(0, 1fr);
   gap: 6px;
   align-items: center;
   margin: 0 0 9px;
@@ -1750,8 +1758,9 @@ textarea { min-height: 110px; resize: vertical; }
   border-color: #bfdbfe;
 }
 .store-missing {
-  background: #fff1f2;
+  background: #fef2f2;
   color: #b91c1c;
+  border: 1px solid #fecaca;
 }
 .store-distance {
   border-radius: 999px;
@@ -1897,8 +1906,8 @@ textarea { min-height: 110px; resize: vertical; }
   border: 1px solid #bfdbfe;
 }
 .store-date {
-  grid-column: 2;
   justify-self: end;
+  white-space: nowrap;
 }
 .visit-order-row {
   display: grid;
@@ -2109,7 +2118,7 @@ textarea { min-height: 110px; resize: vertical; }
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: 2000;
   background: rgba(15, 23, 42, .38);
   display: grid;
   place-items: center;
