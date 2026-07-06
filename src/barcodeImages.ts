@@ -86,7 +86,7 @@ function barcodeRowsFromSheet(sheet: XLSX.WorkSheet): BarcodeSheetMap | null {
   if (itemNoColumn === -1 || barcodeColumn === -1 || imageColumn === -1) return null;
   const rows = matrix
     .slice(headerIndex + 1)
-    .map((row, index) => ({ excelRow: headerIndex + index + 1, itemNo: clean(row[itemNoColumn]) }))
+    .map((row, index) => ({ excelRow: headerIndex + index + 2, itemNo: clean(row[itemNoColumn]) }))
     .filter((row) => row.itemNo);
   return { rows, imageColumn: imageColumn + 1 };
 }
