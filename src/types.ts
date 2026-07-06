@@ -45,6 +45,7 @@ export type SurveyItem = {
   storeId: string;
   storeName: string;
   storeAddress: string;
+  detailAddress?: string;
   companyName: string;
   companyTel: string;
   companyManager?: string;

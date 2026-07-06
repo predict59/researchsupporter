@@ -67,6 +67,8 @@ const aliases: Record<string, string[]> = {
   district: ["지역", "시군구", "구군"],
   department: ["담당부서", "담당", "부서", "지회", "담당지회"],
   address: ["주소", "마트주소", "판매처주소", "매장주소"],
+  finalAddress: ["최종주소", "최종 주소", "지도주소", "검색주소"],
+  detailAddress: ["주소", "상세주소", "세부주소"],
   latitude: ["위도", "latitude", "lat", "y좌표", "y"],
   longitude: ["경도", "longitude", "lng", "lon", "x좌표", "x"],
 };
@@ -120,9 +122,19 @@ function storeKey(region: string, name: string, address: string) {
   return `${region}__${name || "미상"}__${address || "주소없음"}`;
 }
 
-export async function parseSurveyWorkbook(file: File): Promise<{ regions: Region[]; stores: SurveyStore[]; items: SurveyItem[] }> {
-  const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
-  const sheetNames = workbook.SheetNames.filter((name) => !["샘플", "sample"].includes(name.toLowerCase()) && !(workbook.SheetNames.length > 1 && name === "전체"));
+async function readWorkbook(source: Blob | ArrayBuffer) {
+  const buffer = source instanceof Blob ? await source.arrayBuffer() : source;
+  return XLSX.read(buffer, { type: "array" });
+}
+
+function dataSheetNames(workbook: XLSX.WorkBook) {
+  if (workbook.SheetNames.includes("전체")) return ["전체"];
+  return workbook.SheetNames.filter((name) => !["샘플", "sample"].includes(name.toLowerCase()));
+}
+
+export async function parseSurveyWorkbook(source: Blob | ArrayBuffer): Promise<{ regions: Region[]; stores: SurveyStore[]; items: SurveyItem[] }> {
+  const workbook = await readWorkbook(source);
+  const sheetNames = dataSheetNames(workbook);
   const storeMap = new Map<string, SurveyStore>();
   const regionMap = new Map<string, Region>();
   const items: SurveyItem[] = [];
@@ -134,7 +146,8 @@ export async function parseSurveyWorkbook(file: File): Promise<{ regions: Region
     if (!productName && !barcode) return;
     const resolved = resolveSurveyRegion(pick(row, "city"), pick(row, "district"), pick(row, "region") || sheetName);
     const martName = pick(row, "martName") || pick(row, "companyName") || "미상 방문지";
-    const address = pick(row, "address");
+    const detailAddress = pick(row, "detailAddress") || pick(row, "address");
+    const address = pick(row, "finalAddress") || detailAddress;
     const latitude = numberOrNull(pick(row, "latitude"));
     const longitude = numberOrNull(pick(row, "longitude"));
     const key = storeKey(resolved.name, martName, address);
@@ -172,6 +185,7 @@ export async function parseSurveyWorkbook(file: File): Promise<{ regions: Region
       storeId: store.id,
       storeName: store.storeName,
       storeAddress: store.storeAddress,
+      detailAddress,
       companyName: pick(row, "companyName"),
       companyTel: pick(row, "companyTel"),
       companyManager: pick(row, "companyManager"),
@@ -241,6 +255,7 @@ export function mergeContacts(items: SurveyItem[], contactFileRows: Row[]) {
           companyManager: item.companyManager || contact.manager,
           martTel: item.martTel || contact.martTel,
           storeAddress: item.storeAddress || contact.address,
+          detailAddress: item.detailAddress || contact.address,
           martName: item.martName || contact.martName,
           storeName: item.storeName || contact.martName,
         }
@@ -248,9 +263,9 @@ export function mergeContacts(items: SurveyItem[], contactFileRows: Row[]) {
   });
 }
 
-export async function parseContactRows(file: File): Promise<Row[]> {
-  const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
-  const sheetNames = workbook.SheetNames.filter((name) => !["샘플", "sample"].includes(name.toLowerCase()) && !(workbook.SheetNames.length > 1 && name === "전체"));
+export async function parseContactRows(source: Blob | ArrayBuffer): Promise<Row[]> {
+  const workbook = await readWorkbook(source);
+  const sheetNames = dataSheetNames(workbook);
   return sheetNames.flatMap((name) => rowsFromSheet(workbook.Sheets[name], name));
 }
 

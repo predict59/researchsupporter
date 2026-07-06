@@ -31,13 +31,14 @@ const num = (value: string) => {
   const digits = value.replace(/\D/g, "");
   return digits === "" ? null : Number(digits);
 };
-const EXCEL_ACCEPT = ".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv,application/octet-stream";
 const PHOTO_MAX_EDGE = 1280;
 const PHOTO_TARGET_BYTES = 950 * 1024;
 const PHOTO_MIN_EDGE = 760;
 const PHOTO_QUALITY_STEPS = [0.72, 0.64, 0.56, 0.48, 0.4, 0.32];
 const PRICE_DIFF_WARN_PERCENT = 30;
 const TARGET_MAP_URL = "https://www.google.com/maps/d/u/1/edit?mid=1ej99Lo6WS4GROBCQPr0a66MhQR_vXuM&usp=sharing";
+const BASE_SURVEY_URL = `${import.meta.env.BASE_URL}data/base-survey.xlsx`;
+const BASE_CONTACTS_URL = `${import.meta.env.BASE_URL}data/base-contacts.xlsx`;
 type PriceCandidate = { value: number; score: number; source: "comma" | "plain" };
 const PRICE_KEYWORDS = /원|가격|정상|판매|할인|행사|특가|세일|SALE|sale|올리브|카드|멤버십|회원|쿠폰/;
 const PRICE_MAX_VALUE = 999999;
@@ -365,10 +366,8 @@ function App() {
   const [storeQuery, setStoreQuery] = useState("");
   const [itemQuery, setItemQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("전체");
-  const [surveyFile, setSurveyFile] = useState<File | null>(null);
-  const [contactFile, setContactFile] = useState<File | null>(null);
-  const [analysis, setAnalysis] = useState("");
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [baseMessage, setBaseMessage] = useState("");
+  const [isBaseLoading, setIsBaseLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [storeSort, setStoreSort] = useState<StoreSort>("이름 순");
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("list");
@@ -498,6 +497,7 @@ function App() {
     setPhotos(nextPhotos);
     setPhotosReady(true);
     if (nextRegions.length && view === "upload") setView("regions");
+    return { settings: nextSettings, regions: nextRegions, stores: allStores, items: allItems };
   }
 
   function locateUser() {
@@ -573,7 +573,11 @@ function App() {
   }
 
   useEffect(() => {
-    refresh().finally(() => setIsBooting(false));
+    refresh()
+      .then(async ({ regions: nextRegions }) => {
+        if (!nextRegions.length) await loadBaseData();
+      })
+      .finally(() => setIsBooting(false));
   }, []);
 
   useEffect(() => {
@@ -639,29 +643,21 @@ function App() {
     await saveSettings(next);
   }
 
-  async function analyzeFiles() {
-    if (!surveyFile) {
-      alert("조사표 엑셀을 먼저 선택하세요.");
-      return;
-    }
-    if ((items.length || stores.length || photos.length) && !confirm("새 자료 분석을 시작하면 기존 입력 데이터와 사진을 초기화합니다. 계속할까요?")) {
-      return;
-    }
-    if (items.length || stores.length || photos.length) {
-      await clearAllData();
-    }
-    setIsAnalyzing(true);
-    setAnalysis("자료 분석 중입니다. 모바일에서는 10~30초 정도 걸릴 수 있습니다.");
+  async function loadBaseData() {
+    setIsBaseLoading(true);
+    setBaseMessage("GitHub 기준자료를 불러와 작업환경을 준비하고 있습니다.");
     await new Promise((resolve) => setTimeout(resolve, 50));
     try {
-      const parsed = await parseSurveyWorkbook(surveyFile);
+      const [surveyResponse, contactResponse] = await Promise.all([fetch(BASE_SURVEY_URL), fetch(BASE_CONTACTS_URL)]);
+      if (!surveyResponse.ok) throw new Error(`기준 조사표를 불러오지 못했습니다. (${surveyResponse.status})`);
+      if (!contactResponse.ok) throw new Error(`기준 연락처를 불러오지 못했습니다. (${contactResponse.status})`);
+      const [surveyBuffer, contactBuffer] = await Promise.all([surveyResponse.arrayBuffer(), contactResponse.arrayBuffer()]);
+      const parsed = await parseSurveyWorkbook(surveyBuffer);
       let parsedItems = parsed.items;
       let matched = 0;
-      if (contactFile) {
-        const before = parsedItems.filter((item) => item.companyTel).length;
-        parsedItems = mergeContacts(parsedItems, await parseContactRows(contactFile));
-        matched = parsedItems.filter((item) => item.companyTel).length - before;
-      }
+      const before = parsedItems.filter((item) => item.companyTel).length;
+      parsedItems = mergeContacts(parsedItems, await parseContactRows(contactBuffer));
+      matched = parsedItems.filter((item) => item.companyTel).length - before;
       const rebuilt = rebuildStoresAndRegions(parsedItems);
       parsedItems = rebuilt.items;
       const parsedStores = rebuilt.stores.map((store) => {
@@ -669,15 +665,14 @@ function App() {
         return first ? { ...store, storeAddress: first.storeAddress || store.storeAddress, storeName: first.storeName || store.storeName } : store;
       });
       await saveParsedData(rebuilt.regions, parsedStores, parsedItems);
-      setAnalysis(`자료 분석 완료: 전체 품목 ${parsedItems.length.toLocaleString()}개 / 지역 ${rebuilt.regions.length}개 / 방문지 ${parsedStores.length}개 / 연락처 매칭 ${Math.max(0, matched)}개`);
-      await refresh(rebuilt.regions[0]?.name);
+      setBaseMessage(`기준자료 준비 완료: 전체 품목 ${parsedItems.length.toLocaleString()}개 / 지역 ${rebuilt.regions.length}개 / 매장 ${parsedStores.length}개 / 연락처 매칭 ${Math.max(0, matched)}개`);
+      await refresh(undefined);
       setView("regions");
     } catch (error) {
       console.error(error);
-      setAnalysis("자료 분석 실패: 조사표와 연락처 엑셀 파일을 확인해 주세요.");
-      alert("자료 분석에 실패했습니다. 조사표와 연락처 엑셀 파일을 확인해 주세요.");
+      setBaseMessage("기준자료를 불러오지 못했습니다. 네트워크 연결 후 다시 시도해 주세요.");
     } finally {
-      setIsAnalyzing(false);
+      setIsBaseLoading(false);
     }
   }
 
@@ -1027,7 +1022,7 @@ function App() {
     : view === "item" ? "가격정보"
     : view === "validation" ? "검증"
     : view === "backup" ? "백업/복원"
-    : "자료 업로드";
+    : "기준자료";
   const menuAllRegionStats = useMemo(() => {
     if (!summaryOpen || view !== "regions") return emptyStats;
     const completed = regions.filter((region) => {
@@ -1076,26 +1071,18 @@ function App() {
       {view === "upload" && (
         <main className="page narrow upload-page">
           <section className="upload-hero">
-            <span>초기 설정</span>
-            <h1>조사자료 업로드</h1>
-            <p>조사표와 매장 연락처 엑셀을 불러오면 현장 입력에 필요한 지역, 매장, 품목 목록이 자동으로 구성됩니다.</p>
+            <span>기준자료</span>
+            <h1>작업환경 준비</h1>
+            <p>앱에 포함된 기준 엑셀 자료를 불러와 지역, 매장, 품목 목록을 구성합니다. 현장 입력값과 사진은 서버 DB가 아니라 이 기기의 브라우저 저장공간에 별도로 보관됩니다.</p>
             <ul className="upload-notes">
-              <li>입력 자료와 조사 결과는 서버가 아닌 현재 기기의 브라우저 저장공간에 보관됩니다.</li>
-              <li>인터넷이 불안정한 현장에서도 입력과 사진 첨부를 계속할 수 있습니다.</li>
-              <li>다른 기기에서 이어서 작업하려면 백업 파일을 내려받은 뒤 새 기기에서 복원해 주세요.</li>
+              <li>모든 사용자는 GitHub에 배포된 동일한 기준자료로 시작합니다.</li>
+              <li>기기별 입력 데이터는 서로 자동 연동되지 않습니다.</li>
+              <li>다른 기기에서 이어서 작업하려면 전체 백업 파일을 내려받아 복원해 주세요.</li>
             </ul>
           </section>
           <section className="panel upload-panel">
-            <label className="file-card">조사표 엑셀
-              <input type="file" accept={EXCEL_ACCEPT} onChange={(event) => setSurveyFile(event.target.files?.[0] ?? null)} />
-              <span>{surveyFile?.name ?? "필수 파일을 선택하세요"}</span>
-            </label>
-            <label className="file-card">매장 연락처 엑셀
-              <input type="file" accept={EXCEL_ACCEPT} onChange={(event) => setContactFile(event.target.files?.[0] ?? null)} />
-              <span>{contactFile?.name ?? "연락처 파일이 있으면 함께 선택하세요"}</span>
-            </label>
-            <button className="primary analyze-button" onClick={analyzeFiles} disabled={isAnalyzing}><Upload size={18} />{isAnalyzing ? "자료 분석 중..." : "자료 분석 시작"}</button>
-            {analysis && <p className="notice">{analysis}</p>}
+            <button className="primary analyze-button" onClick={loadBaseData} disabled={isBaseLoading}>{isBaseLoading ? "기준자료 준비 중..." : "기준자료 다시 불러오기"}</button>
+            {baseMessage && <p className="notice">{baseMessage}</p>}
           </section>
           <button className="continue-button" disabled={!regions.length} onClick={() => setView("regions")}>지역리스트로 이동</button>
         </main>
@@ -1328,7 +1315,7 @@ function App() {
       )}
 
       {view === "item" && selectedItem && (
-        <ItemEditor item={selectedItem} storeItems={storeItems} storeOperatingStatus={stores.find((store) => store.id === selectedItem.storeId)?.operatingStatus ?? ""} photos={photos.filter((photo) => photo.storeId === selectedItem.storeId)} onSave={saveItem} onSaved={() => refresh(selectedItem.region)} onList={(focusId) => { if (focusId) setSelectedItemId(focusId); setView("items"); }} onStoreList={() => { setFilter("전체"); setSelectedStoreId(selectedItem.storeId); setView("workspace"); }} onMove={(id) => setSelectedItemId(id)} askConfirm={askConfirm} />
+        <ItemEditor item={selectedItem} storeItems={storeItems} storeOperatingStatus={stores.find((store) => store.id === selectedItem.storeId)?.operatingStatus ?? ""} photos={photos.filter((photo) => photo.storeId === selectedItem.storeId)} onSave={saveItem} onSaved={async () => { await refresh(selectedItem.region); }} onList={(focusId) => { if (focusId) setSelectedItemId(focusId); setView("items"); }} onStoreList={() => { setFilter("전체"); setSelectedStoreId(selectedItem.storeId); setView("workspace"); }} onMove={(id) => setSelectedItemId(id)} askConfirm={askConfirm} />
       )}
 
       {view === "validation" && (
@@ -2339,7 +2326,7 @@ function PhotoSlot({ id, label, description, disabled, photo, message, messageTo
 }
 
 function Info({ item }: { item: SurveyItem }) {
-  return <dl className="info"><dt>물품코드</dt><dd>{item.itemNo}</dd><dt>제조사</dt><dd>{item.companyName}</dd><dt>물품명</dt><dd>{item.productName}</dd><dt>규격</dt><dd>{item.spec}</dd><dt>기준가격</dt><dd>{item.basePrice !== null ? `${item.basePrice.toLocaleString()}원` : "-"}</dd><dt>바코드</dt><dd>{item.barcode}</dd></dl>;
+  return <dl className="info"><dt>물품코드</dt><dd>{item.itemNo}</dd><dt>상세주소</dt><dd>{item.detailAddress || "-"}</dd><dt>제조사</dt><dd>{item.companyName}</dd><dt>물품명</dt><dd>{item.productName}</dd><dt>규격</dt><dd>{item.spec}</dd><dt>기준가격</dt><dd>{item.basePrice !== null ? `${item.basePrice.toLocaleString()}원` : "-"}</dd><dt>바코드</dt><dd>{item.barcode}</dd></dl>;
 }
 
 function DiscountControls({

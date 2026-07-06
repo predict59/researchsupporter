@@ -51,7 +51,7 @@ export async function saveParsedData(regions: Region[], stores: SurveyStore[], i
   const settings = await tx.objectStore("settings").get("app");
   await tx.objectStore("settings").put({
     id: "app",
-    value: { defaultSurveyDate: today(), ...settings?.value, currentRegion: settings?.value?.currentRegion ?? regions[0]?.name },
+    value: { defaultSurveyDate: today(), ...settings?.value, currentRegion: settings?.value?.currentRegion },
   });
   await tx.done;
 }
