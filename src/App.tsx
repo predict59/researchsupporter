@@ -1,6 +1,7 @@
 import { Camera, CheckCircle2, ChevronDown, ChevronUp, Download, Menu, MoreVertical, Phone, SlidersHorizontal, Search, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { clearAllData, deletePhoto, getItems, getPhotos, getPhotosByRegion, getPhotosByStore, getRegions, getSettings, getStores, importAllData, importRegionData, now, putItem, putPhoto, putStore, saveParsedData, saveSettings, today, uid } from "./db";
+import { clearAllData, deletePhoto, getBarcodeIndex, getItems, getPhotos, getPhotosByRegion, getPhotosByStore, getRegions, getSettings, getStores, importAllData, importRegionData, now, putItem, putPhoto, putStore, saveBarcodeIndex, saveParsedData, saveSettings, today, uid } from "./db";
+import { extractBarcodeImages } from "./barcodeImages";
 import { parseContactRows, parseSurveyWorkbook, mergeContacts, rebuildStoresAndRegions } from "./excel";
 import { dataUrlToBlob, exportBackup, exportRegionExcel, exportRegionZip } from "./exporters";
 import { mapSearchAddress, requiredPhotoLabels, summarize } from "./logic";
@@ -8,7 +9,7 @@ import type { AppSettings, BackupPayload, PhotoType, Region, RegionStats, StoreO
 
 type View = "upload" | "regions" | "assignment" | "workspace" | "store" | "items" | "item" | "backup" | "validation";
 type Filter = "전체" | "미완료" | "미조사" | "조사중" | "완료" | "사진누락" | "미진열";
-type StoreSort = "이름 순" | "품목 많은 순" | "미완료 많은 순" | "거리 순" | "임의 지정 순";
+type StoreSort = "이름 순" | "품목 많은 순" | "미완료 많은 순" | "거리 순";
 type WorkspaceMode = "list" | "map";
 type ConfirmState = {
   title: string;
@@ -37,9 +38,6 @@ const PHOTO_MIN_EDGE = 760;
 const PHOTO_QUALITY_STEPS = [0.72, 0.64, 0.56, 0.48, 0.4, 0.32];
 const PRICE_DIFF_WARN_PERCENT = 30;
 const TARGET_MAP_URL = "https://www.google.com/maps/d/u/1/edit?mid=1ej99Lo6WS4GROBCQPr0a66MhQR_vXuM&usp=sharing";
-const BASE_SURVEY_URL = `${import.meta.env.BASE_URL}data/base-survey.xlsx`;
-const BASE_CONTACTS_URL = `${import.meta.env.BASE_URL}data/base-contacts.xlsx`;
-const BARCODE_INDEX_URL = `${import.meta.env.BASE_URL}data/barcode-index.json`;
 type BarcodeImageIndex = Record<string, string>;
 type PriceCandidate = { value: number; score: number; source: "comma" | "plain" };
 type PriceOcrWorker = Awaited<ReturnType<typeof import("tesseract.js")["createWorker"]>>;
@@ -96,7 +94,8 @@ const formatDistance = (km?: number) => {
 };
 const barcodeImageSrc = (item: SurveyItem, index: BarcodeImageIndex) => {
   const path = index[onlyDigits(item.barcode)];
-  return path ? `${import.meta.env.BASE_URL}${path}` : "";
+  if (!path) return "";
+  return path.startsWith("data:") ? path : `${import.meta.env.BASE_URL}${path}`;
 };
 let priceOcrWorkerPromise: Promise<PriceOcrWorker> | null = null;
 
@@ -388,13 +387,15 @@ function App() {
   const [barcodeIndex, setBarcodeIndex] = useState<BarcodeImageIndex>({});
   const [barcodeModalItemId, setBarcodeModalItemId] = useState("");
   const [barcodeReturnItemId, setBarcodeReturnItemId] = useState("");
-  const [baseMessage, setBaseMessage] = useState("");
-  const [isBaseLoading, setIsBaseLoading] = useState(false);
+  const [surveyFile, setSurveyFile] = useState<File | null>(null);
+  const [contactFile, setContactFile] = useState<File | null>(null);
+  const [barcodeFile, setBarcodeFile] = useState<File | null>(null);
+  const [uploadMessage, setUploadMessage] = useState("");
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [storeSort, setStoreSort] = useState<StoreSort>("이름 순");
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("list");
   const [workspaceToolsOpen, setWorkspaceToolsOpen] = useState(false);
-  const [orderEditing, setOrderEditing] = useState(false);
   const [itemToolsOpen, setItemToolsOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [contactStoreId, setContactStoreId] = useState("");
@@ -439,7 +440,6 @@ function App() {
         const bd = hasStoreCoordinates(b) ? distanceKm(userLocation, { latitude: b.latitude!, longitude: b.longitude! }) : Number.POSITIVE_INFINITY;
         return ad - bd || a.storeName.localeCompare(b.storeName, "ko");
       }
-      if (storeSort === "임의 지정 순") return (a.visitOrder ?? Number.MAX_SAFE_INTEGER) - (b.visitOrder ?? Number.MAX_SAFE_INTEGER) || a.storeName.localeCompare(b.storeName, "ko");
       if (storeSort === "품목 많은 순") return bs.total - as.total;
       if (storeSort === "미완료 많은 순") return (bs.notStarted + bs.inProgress) - (as.notStarted + as.inProgress);
       return a.storeName.localeCompare(b.storeName, "ko") || `${a.storeAddress}`.localeCompare(`${b.storeAddress}`, "ko");
@@ -505,8 +505,7 @@ function App() {
   }, [view, workspaceMode, canUseStoreMap]);
   useEffect(() => {
     let cancelled = false;
-    fetch(BARCODE_INDEX_URL)
-      .then((response) => response.ok ? response.json() : {})
+    getBarcodeIndex()
       .then((data) => {
         if (!cancelled) setBarcodeIndex(data as BarcodeImageIndex);
       })
@@ -626,10 +625,23 @@ function App() {
 
   useEffect(() => {
     refresh()
-      .then(async ({ regions: nextRegions }) => {
-        if (!nextRegions.length) await loadBaseData();
-      })
       .finally(() => setIsBooting(false));
+  }, []);
+
+  useEffect(() => {
+    const warm = () => {
+      void getPriceOcrWorker().catch(() => undefined);
+    };
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (callback: () => void, options?: { timeout?: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    if (idleWindow.requestIdleCallback) {
+      const idleId = idleWindow.requestIdleCallback(warm, { timeout: 4000 });
+      return () => idleWindow.cancelIdleCallback?.(idleId);
+    }
+    const timeoutId = globalThis.setTimeout(warm, 1200);
+    return () => globalThis.clearTimeout(timeoutId);
   }, []);
 
   useEffect(() => {
@@ -695,20 +707,30 @@ function App() {
     await saveSettings(next);
   }
 
-  async function loadBaseData() {
-    setIsBaseLoading(true);
-    setBaseMessage("GitHub 기준자료를 불러와 작업환경을 준비하고 있습니다.");
+  async function analyzeUploadedFiles() {
+    if (!surveyFile || !contactFile) {
+      setUploadMessage("조사표와 업체 연락처 엑셀 파일을 선택해 주세요.");
+      return;
+    }
+    if (regions.length || stores.length || items.length || photos.length) {
+      const ok = await askConfirm({
+        title: "자료 다시 구성",
+        message: "새 엑셀 파일로 지역, 매장, 물품 목록을 다시 구성합니다. 기존 현장 입력값과 사진은 초기화될 수 있습니다. 계속할까요?",
+        confirmText: "계속",
+        cancelText: "취소",
+        plain: true,
+      });
+      if (!ok) return;
+    }
+    setIsAnalyzing(true);
+    setUploadMessage("자료를 분석하고 있습니다.");
     await new Promise((resolve) => setTimeout(resolve, 50));
     try {
-      const [surveyResponse, contactResponse] = await Promise.all([fetch(BASE_SURVEY_URL), fetch(BASE_CONTACTS_URL)]);
-      if (!surveyResponse.ok) throw new Error(`기준 조사표를 불러오지 못했습니다. (${surveyResponse.status})`);
-      if (!contactResponse.ok) throw new Error(`기준 연락처를 불러오지 못했습니다. (${contactResponse.status})`);
-      const [surveyBuffer, contactBuffer] = await Promise.all([surveyResponse.arrayBuffer(), contactResponse.arrayBuffer()]);
-      const parsed = await parseSurveyWorkbook(surveyBuffer);
+      const parsed = await parseSurveyWorkbook(surveyFile);
       let parsedItems = parsed.items;
       let matched = 0;
       const before = parsedItems.filter((item) => item.companyTel).length;
-      parsedItems = mergeContacts(parsedItems, await parseContactRows(contactBuffer));
+      parsedItems = mergeContacts(parsedItems, await parseContactRows(contactFile));
       matched = parsedItems.filter((item) => item.companyTel).length - before;
       const rebuilt = rebuildStoresAndRegions(parsedItems);
       parsedItems = rebuilt.items;
@@ -716,15 +738,25 @@ function App() {
         const first = parsedItems.find((item) => item.storeId === store.id);
         return first ? { ...store, storeAddress: first.storeAddress || store.storeAddress, storeName: first.storeName || store.storeName } : store;
       });
+      let nextBarcodeIndex: BarcodeImageIndex = {};
+      let extractedBarcodes = 0;
+      if (barcodeFile) {
+        setUploadMessage("바코드 이미지를 추출하고 있습니다.");
+        nextBarcodeIndex = await extractBarcodeImages(barcodeFile);
+        extractedBarcodes = Object.keys(nextBarcodeIndex).length;
+      }
+      await clearAllData();
       await saveParsedData(rebuilt.regions, parsedStores, parsedItems);
-      setBaseMessage(`기준자료 준비 완료: 전체 품목 ${parsedItems.length.toLocaleString()}개 / 지역 ${rebuilt.regions.length}개 / 매장 ${parsedStores.length}개 / 연락처 매칭 ${Math.max(0, matched)}개`);
+      await saveBarcodeIndex(nextBarcodeIndex);
+      setBarcodeIndex(nextBarcodeIndex);
+      setUploadMessage(`분석 완료: 전체 품목 ${parsedItems.length.toLocaleString()}개 / 지역 ${rebuilt.regions.length}개 / 매장 ${parsedStores.length}개 / 연락처 매칭 ${Math.max(0, matched)}개 / 바코드 이미지 ${extractedBarcodes.toLocaleString()}개`);
       await refresh(undefined);
       setView("regions");
     } catch (error) {
       console.error(error);
-      setBaseMessage("기준자료를 불러오지 못했습니다. 네트워크 연결 후 다시 시도해 주세요.");
+      setUploadMessage("자료를 분석하지 못했습니다. 엑셀 파일 양식을 확인해 주세요.");
     } finally {
-      setIsBaseLoading(false);
+      setIsAnalyzing(false);
     }
   }
 
@@ -737,7 +769,6 @@ function App() {
     setItemQuery("");
     setFilter("전체");
     setStoreSort("이름 순");
-    setOrderEditing(false);
     setWorkspaceMode("list");
     setPhotosReady(false);
     setPhotos([]);
@@ -755,7 +786,6 @@ function App() {
     setItemQuery("");
     setWorkspaceMode("list");
     setStoreSort("이름 순");
-    setOrderEditing(false);
     setWorkspaceToolsOpen(false);
     setPhotosReady(false);
     setPhotos([]);
@@ -792,7 +822,6 @@ function App() {
     const nextSettings = { ...settings, lastOpenedStoreId: store.id, currentRegion: store.region };
     setSettingsState(nextSettings);
     setView("store");
-    setOrderEditing(false);
     saveSettings(nextSettings);
   }
 
@@ -804,13 +833,6 @@ function App() {
 
   async function setStoresAssigned(targetStores: SurveyStore[], assigned: boolean) {
     const updated = targetStores.map((store) => ({ ...store, mapIncluded: assigned, updatedAt: now() }));
-    await Promise.all(updated.map(putStore));
-    const updates = new Map(updated.map((store) => [store.id, store]));
-    setStores((old) => old.map((store) => updates.get(store.id) ?? store));
-  }
-
-  async function updateStoreVisitOrders(orderedStores: SurveyStore[]) {
-    const updated = orderedStores.map((store, index) => ({ ...store, visitOrder: index + 1, updatedAt: now() }));
     await Promise.all(updated.map(putStore));
     const updates = new Map(updated.map((store) => [store.id, store]));
     setStores((old) => old.map((store) => updates.get(store.id) ?? store));
@@ -1088,7 +1110,10 @@ function App() {
       setItemQuery("");
       setView("store");
     }
-    else if (view === "item") setView("items");
+    else if (view === "item") {
+      if (barcodeReturnItemId && selectedItemId === barcodeReturnItemId) returnToBarcodeModal(selectedItemId);
+      else setView("items");
+    }
     else if (view === "validation") setView(currentRegion ? "workspace" : "regions");
     else if (view === "backup") setView(regions.length ? "regions" : "upload");
     else if (view === "regions") {
@@ -1107,7 +1132,7 @@ function App() {
     : view === "item" ? "가격정보"
     : view === "validation" ? "검증"
     : view === "backup" ? "백업/복원"
-    : "기준자료";
+    : "자료업로드";
   const menuAllRegionStats = useMemo(() => {
     if (!summaryOpen || view !== "regions") return emptyStats;
     const completed = regions.filter((region) => {
@@ -1156,18 +1181,33 @@ function App() {
       {view === "upload" && (
         <main className="page narrow upload-page">
           <section className="upload-hero">
-            <span>기준자료</span>
-            <h1>작업환경 준비</h1>
-            <p>앱에 포함된 기준 엑셀 자료를 불러와 지역, 매장, 품목 목록을 구성합니다. 현장 입력값과 사진은 서버 DB가 아니라 이 기기의 브라우저 저장공간에 별도로 보관됩니다.</p>
+            <span>자료 업로드</span>
+            <h1>조사 작업환경 만들기</h1>
+            <p>조사표와 업체 연락처 엑셀 파일을 입력하면 지역, 매장, 물품 목록이 이 기기의 브라우저 저장공간에 생성됩니다. 서버 DB와 자동 동기화되지 않으므로 다른 기기에서 이어서 작업하려면 전체 백업 파일로 복원해 주세요.</p>
             <ul className="upload-notes">
-              <li>모든 사용자는 GitHub에 배포된 동일한 기준자료로 시작합니다.</li>
-              <li>기기별 입력 데이터는 서로 자동 연동되지 않습니다.</li>
-              <li>다른 기기에서 이어서 작업하려면 전체 백업 파일을 내려받아 복원해 주세요.</li>
+              <li>조사표와 업체 연락처는 필수입니다.</li>
+              <li>바코드 이미지 파일은 POS 확인용 바코드 모달에 사용됩니다.</li>
+              <li>새 자료를 다시 분석하면 기존 입력 데이터가 초기화될 수 있으니 필요하면 먼저 전체 백업을 내려받아 주세요.</li>
             </ul>
           </section>
           <section className="panel upload-panel">
-            <button className="primary analyze-button" onClick={loadBaseData} disabled={isBaseLoading}>{isBaseLoading ? "기준자료 준비 중..." : "기준자료 다시 불러오기"}</button>
-            {baseMessage && <p className="notice">{baseMessage}</p>}
+            <label className="file-card">
+              <strong>1. 조사표 엑셀</strong>
+              <input type="file" accept=".xlsx,.xls" onChange={(event) => setSurveyFile(event.target.files?.[0] ?? null)} />
+              <span>{surveyFile?.name ?? "선택된 파일 없음"}</span>
+            </label>
+            <label className="file-card">
+              <strong>2. 업체 연락처 엑셀</strong>
+              <input type="file" accept=".xlsx,.xls" onChange={(event) => setContactFile(event.target.files?.[0] ?? null)} />
+              <span>{contactFile?.name ?? "선택된 파일 없음"}</span>
+            </label>
+            <label className="file-card">
+              <strong>3. 바코드 이미지 엑셀</strong>
+              <input type="file" accept=".xlsx,.xls" onChange={(event) => setBarcodeFile(event.target.files?.[0] ?? null)} />
+              <span>{barcodeFile?.name ?? "선택하지 않으면 바코드 이미지는 표시되지 않습니다."}</span>
+            </label>
+            <button className="primary analyze-button" onClick={analyzeUploadedFiles} disabled={isAnalyzing}>{isAnalyzing ? "자료 분석 중..." : "자료 분석 시작"}</button>
+            {uploadMessage && <p className="notice">{uploadMessage}</p>}
           </section>
           <button className="continue-button" disabled={!regions.length} onClick={() => setView("regions")}>지역리스트로 이동</button>
         </main>
@@ -1251,15 +1291,9 @@ function App() {
                   <option>품목 많은 순</option>
                   <option>미완료 많은 순</option>
                   <option disabled={!userLocation}>거리 순</option>
-                  <option>임의 지정 순</option>
                 </select>
                 </label>
               </div>
-              {storeSort === "임의 지정 순" && (
-                <button type="button" className="order-edit-toggle" onClick={() => setOrderEditing(true)}>
-                  순서편집
-                </button>
-              )}
               {storeSort === "거리 순" && !assignedRegionStores.some(hasStoreCoordinates) && <p className="small-help warn">매장 위치정보가 없으면 거리순 정렬이 정확하지 않을 수 있습니다.</p>}
             </section>
           )}
@@ -1300,18 +1334,6 @@ function App() {
           <button type="button" className="location-fab" onClick={() => locateUser({ force: true, focus: true })}>내 위치</button>
         </main>
       )}
-      {orderEditing && currentRegion && (
-        <VisitOrderModal
-          stores={assignedRegionStores}
-          statsByStore={regionStatsByStore}
-          onSave={async (orderedStores) => {
-            await updateStoreVisitOrders(orderedStores);
-            setOrderEditing(false);
-          }}
-          onClose={() => setOrderEditing(false)}
-        />
-      )}
-
       {view === "assignment" && currentRegion && (
         <main className="page">
           <div className="sticky-search workspace-search assignment-search">
@@ -1411,7 +1433,7 @@ function App() {
                   </div>
                   <div className="item-card-actions">
                     <button type="button" onClick={() => setBarcodeModalItemId(item.id)}>바코드</button>
-                    <button className="primary" onClick={() => { setSelectedItemId(item.id); setView("item"); }}>입력</button>
+                    <button className="primary" onClick={() => { setBarcodeReturnItemId(""); setSelectedItemId(item.id); setView("item"); }}>입력</button>
                   </div>
                 </article>
               );
@@ -2010,72 +2032,6 @@ function StoreMapView({ stores, statsByStore, userLocation, locationFocusTick, s
         ) : (
           <p className="muted">좌표가 있는 매장을 선택하면 여기에 정보가 표시됩니다.</p>
         )}
-      </section>
-    </div>
-  );
-}
-
-function VisitOrderModal({ stores, statsByStore, onSave, onClose }: { stores: SurveyStore[]; statsByStore: Map<string, RegionStats>; onSave: (stores: SurveyStore[]) => void | Promise<void>; onClose: () => void }) {
-  const initialIds = useMemo(
-    () => [...stores]
-      .sort((a, b) => (a.visitOrder ?? Number.MAX_SAFE_INTEGER) - (b.visitOrder ?? Number.MAX_SAFE_INTEGER) || a.storeName.localeCompare(b.storeName, "ko"))
-      .map((store) => store.id),
-    [stores],
-  );
-  const [draftIds, setDraftIds] = useState(initialIds);
-  useEffect(() => setDraftIds(initialIds), [initialIds.join("|")]);
-  const storeMap = useMemo(() => new Map(stores.map((store) => [store.id, store])), [stores]);
-  const orderedStores = draftIds.map((id) => storeMap.get(id)).filter(Boolean) as SurveyStore[];
-  const move = (index: number, direction: -1 | 1) => {
-    const nextIndex = index + direction;
-    if (nextIndex < 0 || nextIndex >= draftIds.length) return;
-    setDraftIds((old) => {
-      const next = [...old];
-      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
-      return next;
-    });
-  };
-  const setOrder = (id: string, value: number) => {
-    const current = draftIds.filter((candidate) => candidate !== id);
-    const index = Math.max(0, Math.min(current.length, value - 1));
-    current.splice(index, 0, id);
-    setDraftIds(current);
-  };
-  return (
-    <div className="modal-backdrop" role="dialog" aria-modal="true">
-      <section className="modal visit-order-modal">
-        <div className="modal-head">
-          <div>
-            <h2>매장 순서편집</h2>
-            <p>임의 지정 순으로 볼 매장 방문 순서를 조정합니다.</p>
-          </div>
-          <button className="icon-button" onClick={onClose} aria-label="닫기"><X size={18} /></button>
-        </div>
-        <div className="visit-order-list">
-          {orderedStores.map((store, index) => {
-            const stats = statsByStore.get(store.id) ?? emptyStats;
-            return (
-              <div className="visit-order-row" key={store.id}>
-                <span className="drag-handle">≡</span>
-                <input aria-label="순서" type="number" min={1} max={orderedStores.length} value={index + 1} onChange={(event) => setOrder(store.id, Number(event.target.value) || index + 1)} />
-                <div className="visit-order-name">
-                  <strong title={store.storeName}>{store.storeName}</strong>
-                  <span title={store.storeAddress}>{store.storeAddress || "주소 없음"}</span>
-                </div>
-                <span className="assignment-stat">{stats.completed.toLocaleString()}/{stats.total.toLocaleString()}</span>
-                <div className="visit-order-actions">
-                  <button type="button" onClick={() => move(index, -1)} disabled={index === 0}>↑</button>
-                  <button type="button" onClick={() => move(index, 1)} disabled={index === orderedStores.length - 1}>↓</button>
-                </div>
-              </div>
-            );
-          })}
-          {!orderedStores.length && <p className="muted">담당매장이 없습니다.</p>}
-        </div>
-        <div className="confirm-actions">
-          <button type="button" onClick={onClose}>취소</button>
-          <button type="button" className="primary" onClick={() => onSave(orderedStores)}>저장</button>
-        </div>
       </section>
     </div>
   );

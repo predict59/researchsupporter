@@ -1,5 +1,5 @@
 import { openDB } from "idb";
-import type { AppSettings, Region, SurveyItem, SurveyPhoto, SurveyStore } from "./types";
+import type { AppSettings, Region, SurveyFileRecord, SurveyItem, SurveyPhoto, SurveyStore } from "./types";
 
 const DB_NAME = "mw-price-survey-pwa";
 const DB_VERSION = 1;
@@ -54,6 +54,17 @@ export async function saveParsedData(regions: Region[], stores: SurveyStore[], i
     value: { defaultSurveyDate: today(), ...settings?.value, currentRegion: settings?.value?.currentRegion },
   });
   await tx.done;
+}
+
+export async function getBarcodeIndex() {
+  const db = await dbPromise;
+  const record = (await db.get("surveyFiles", "barcodeIndex")) as SurveyFileRecord | undefined;
+  return record?.value ?? {};
+}
+
+export async function saveBarcodeIndex(value: Record<string, string>) {
+  const db = await dbPromise;
+  await db.put("surveyFiles", { id: "barcodeIndex", value, updatedAt: now() } satisfies SurveyFileRecord);
 }
 
 export async function getStores(region?: string) {

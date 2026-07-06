@@ -98,6 +98,12 @@ export type AppSettings = {
   defaultSurveyDate: string;
 };
 
+export type SurveyFileRecord = {
+  id: "barcodeIndex";
+  value: Record<string, string>;
+  updatedAt: string;
+};
+
 export type RegionStats = {
   total: number;
   completed: number;

@@ -712,19 +712,6 @@ textarea { min-height: 110px; resize: vertical; }
   min-height: 34px;
   height: 34px;
 }
-.order-edit-toggle {
-  width: fit-content;
-  min-height: 34px;
-  padding: 0 12px;
-  border-radius: 999px;
-  font-size: 13px;
-  font-weight: 800;
-}
-.order-edit-toggle.active {
-  background: #0f766e;
-  border-color: #0f766e;
-  color: #fff;
-}
 .area-summary {
   margin: -2px 0 8px;
   color: #334155;
@@ -1988,32 +1975,6 @@ textarea { min-height: 110px; resize: vertical; }
   justify-self: end;
   white-space: nowrap;
 }
-.visit-order-modal {
-  width: min(720px, calc(100vw - 24px));
-}
-.visit-order-list {
-  display: grid;
-  gap: 6px;
-  max-height: min(56dvh, 520px);
-  overflow: auto;
-  padding-right: 2px;
-}
-.visit-order-row {
-  display: grid;
-  grid-template-columns: 24px 54px minmax(0, 1fr) auto auto;
-  gap: 8px;
-  align-items: center;
-  min-height: 54px;
-  padding: 7px 8px;
-  border: 1px solid #dbe1e5;
-  border-radius: 8px;
-  background: #fff;
-  cursor: grab;
-}
-.visit-order-row.focused {
-  border-color: #0f766e;
-  box-shadow: 0 0 0 2px rgba(15, 118, 110, .1);
-}
 .map-view-button {
   width: fit-content;
   min-height: 36px;
@@ -2143,56 +2104,6 @@ textarea { min-height: 110px; resize: vertical; }
   color: #64748b;
   font-size: 13px;
   font-weight: 700;
-}
-.visit-order-row.dragging {
-  opacity: .55;
-  background: #ecfeff;
-  border-color: #67e8f9;
-}
-.drag-handle {
-  color: #94a3b8;
-  font-size: 16px;
-  font-weight: 900;
-  text-align: center;
-  cursor: grab;
-}
-.visit-order-row input {
-  min-height: 38px;
-  padding: 0 6px;
-  text-align: center;
-  font-size: 15px;
-  font-weight: 900;
-}
-.visit-order-name {
-  min-width: 0;
-  display: grid;
-  gap: 2px;
-}
-.visit-order-name strong,
-.visit-order-name span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.visit-order-name strong {
-  color: #17202a;
-  font-size: 14px;
-}
-.visit-order-name span {
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 700;
-}
-.visit-order-actions {
-  display: grid;
-  grid-template-columns: 34px 34px;
-  gap: 4px;
-}
-.visit-order-actions button {
-  min-height: 34px;
-  padding: 0;
-  font-size: 12px;
-  font-weight: 900;
 }
 .store-card.focused {
   border-color: #0f766e;
@@ -2377,30 +2288,6 @@ textarea { min-height: 110px; resize: vertical; }
     min-height: 44px;
     padding: 0 6px;
     font-size: 15px;
-  }
-  .visit-order-row {
-    grid-template-columns: 20px 44px minmax(0, 1fr) auto;
-    min-height: 48px;
-    gap: 6px;
-  }
-  .visit-order-modal .assignment-stat {
-    display: none;
-  }
-  .visit-order-actions {
-    grid-template-columns: 30px 30px;
-  }
-  .visit-order-actions button {
-    min-height: 30px;
-  }
-  .visit-order-row input {
-    min-height: 34px;
-    font-size: 13px;
-  }
-  .visit-order-name strong {
-    font-size: 13px;
-  }
-  .visit-order-name span {
-    font-size: 10px;
   }
   .confirm-dialog { width: calc(100vw - 24px); }
 }
