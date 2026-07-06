@@ -1126,6 +1126,13 @@ textarea { min-height: 110px; resize: vertical; }
 .store-front-slot .photo-actions {
   gap: 6px;
 }
+.store-front-actions {
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+}
+.store-front-actions button,
+.store-front-actions .photo-button {
+  min-width: 0;
+}
 .store-date-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -2145,6 +2152,57 @@ textarea { min-height: 110px; resize: vertical; }
 .modal-head h2 { margin: 0 0 6px; }
 .modal .panel { border: 0; padding: 0; margin: 0; }
 .icon-button { width: 42px; padding: 0; }
+.front-photo-picker-modal {
+  width: min(760px, calc(100vw - 24px));
+}
+.front-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  max-height: min(62dvh, 560px);
+  overflow: auto;
+  padding-right: 2px;
+}
+.front-photo-option {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  min-height: 0;
+  text-align: left;
+  border: 1px solid #dbe1e5;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.front-photo-option:hover,
+.front-photo-option:focus-visible {
+  border-color: #0f766e;
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, .1);
+}
+.front-photo-thumb {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  max-height: 128px;
+}
+.front-photo-option strong {
+  color: #0f172a;
+  font-size: 14px;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.front-photo-option span,
+.front-photo-option em {
+  color: #64748b;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+  line-height: 1.35;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
 
 @media (max-width: 720px) {
   :root { --topbar-height: 51px; }

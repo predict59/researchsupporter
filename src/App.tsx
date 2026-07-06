@@ -401,6 +401,7 @@ function App() {
   const [contactStoreId, setContactStoreId] = useState("");
   const [storageOpen, setStorageOpen] = useState(false);
   const [storageEstimate, setStorageEstimate] = useState<StorageEstimate | undefined>();
+  const [frontPhotoPickerOpen, setFrontPhotoPickerOpen] = useState(false);
   const [userLocation, setUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locationFocusTick, setLocationFocusTick] = useState(0);
   const [geocodeMessage, setGeocodeMessage] = useState("");
@@ -485,6 +486,9 @@ function App() {
   const selectedStore = stores.find((store) => store.id === selectedStoreId);
   const storeItems = useMemo(() => items.filter((item) => item.storeId === selectedStoreId), [items, selectedStoreId]);
   const selectedItem = items.find((item) => item.id === selectedItemId);
+  const reusableFrontPhotos = useMemo(() => photos
+    .filter((photo) => photo.type === "STORE_FRONT" && photo.id !== selectedStore?.frontPhotoId)
+    .sort((a, b) => `${b.takenAt}`.localeCompare(`${a.takenAt}`)), [photos, selectedStore?.frontPhotoId]);
   const visibleStoreItems = useMemo(() => storeItems
     .filter((item) => `${item.itemNo} ${item.productName} ${item.barcode} ${item.companyManager} ${item.companyName} ${item.companyTel} ${item.martTel}`.includes(itemQuery))
     .filter((item) => {
@@ -846,6 +850,38 @@ function App() {
     const nextStore = { ...selectedStore, frontPhotoId: photo.id, operatingStatus: selectedStore.frontPhotoId ? selectedStore.operatingStatus : undefined, status: "진행중" as const, startedAt: selectedStore.startedAt ?? now(), updatedAt: now() };
     await putPhoto(photo);
     await putStore(nextStore);
+    await refresh(selectedStore.region);
+  }
+
+  async function useExistingStorePhoto(source: SurveyPhoto) {
+    if (!selectedStore) return;
+    if (source.id === selectedStore.frontPhotoId) {
+      setFrontPhotoPickerOpen(false);
+      return;
+    }
+    if (selectedStore.frontPhotoId) await deletePhoto(selectedStore.frontPhotoId);
+    const copiedBlob = source.blob.slice(0, source.blob.size, source.mimeType || source.blob.type || "image/jpeg");
+    const photo: SurveyPhoto = {
+      id: uid("photo"),
+      region: selectedStore.region,
+      storeId: selectedStore.id,
+      type: "STORE_FRONT",
+      blob: copiedBlob,
+      originalName: source.originalName ? `copy_${source.originalName}` : "store-front-copy.jpg",
+      mimeType: source.mimeType || source.blob.type || "image/jpeg",
+      takenAt: now(),
+    };
+    const nextStore = {
+      ...selectedStore,
+      frontPhotoId: photo.id,
+      operatingStatus: selectedStore.frontPhotoId ? selectedStore.operatingStatus : undefined,
+      status: "진행중" as const,
+      startedAt: selectedStore.startedAt ?? now(),
+      updatedAt: now(),
+    };
+    await putPhoto(photo);
+    await putStore(nextStore);
+    setFrontPhotoPickerOpen(false);
     await refresh(selectedStore.region);
   }
 
@@ -1365,8 +1401,9 @@ function App() {
               return (
             <div className={`photo-slot store-front-slot ${selectedStore.frontPhotoId ? "uploaded" : ""}`}>
               {frontPhoto && <PhotoPreview photo={frontPhoto} className="wide-preview" />}
-              <div className="photo-actions">
+              <div className="photo-actions store-front-actions">
                 {!selectedStore.frontPhotoId && <PhotoInput label="촬영/첨부" onFile={saveStorePhoto} />}
+                <button type="button" disabled={reusableFrontPhotos.length === 0} onClick={() => setFrontPhotoPickerOpen(true)}>기존 사진 사용</button>
                 {selectedStore.frontPhotoId && <button className="danger" onClick={removeStorePhoto}>지우기</button>}
               </div>
             </div>
@@ -1505,6 +1542,14 @@ function App() {
           onClose={() => setStorageOpen(false)}
         />
       )}
+      {frontPhotoPickerOpen && selectedStore && (
+        <StoreFrontPhotoPicker
+          photos={reusableFrontPhotos}
+          stores={stores}
+          onSelect={useExistingStorePhoto}
+          onClose={() => setFrontPhotoPickerOpen(false)}
+        />
+      )}
       {confirmState && <ConfirmDialog state={confirmState} onClose={closeConfirm} />}
       {summaryOpen && view === "regions" && (
         <SummaryModal
@@ -1580,6 +1625,39 @@ function PhotoPreview({ photo, className = "" }: { photo?: SurveyPhoto; classNam
   }, [photo?.id]);
   if (!photo || !url) return null;
   return <img className={`photo-preview ${className}`} src={url} alt="업로드 사진 미리보기" loading="lazy" />;
+}
+
+function StoreFrontPhotoPicker({ photos, stores, onSelect, onClose }: { photos: SurveyPhoto[]; stores: SurveyStore[]; onSelect: (photo: SurveyPhoto) => void | Promise<void>; onClose: () => void }) {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <section className="modal front-photo-picker-modal">
+        <div className="modal-head">
+          <div>
+            <h2>기존 전경사진 사용</h2>
+            <p>이미 촬영한 전경사진을 선택하면 현재 매장 사진으로 복사됩니다.</p>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="닫기"><X size={18} /></button>
+        </div>
+        {photos.length === 0 ? (
+          <p className="small-help">사용할 수 있는 전경사진이 아직 없습니다.</p>
+        ) : (
+          <div className="front-photo-grid">
+            {photos.map((photo) => {
+              const store = stores.find((candidate) => candidate.id === photo.storeId);
+              return (
+                <button type="button" className="front-photo-option" key={photo.id} onClick={() => onSelect(photo)}>
+                  <PhotoPreview photo={photo} className="front-photo-thumb" />
+                  <strong>{store?.storeName || "매장 정보 없음"}</strong>
+                  <span>{store?.storeAddress || "-"}</span>
+                  <em>{photo.takenAt ? photo.takenAt.slice(0, 16).replace("T", " ") : "-"}</em>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </section>
+    </div>
+  );
 }
 
 function StorageModal({ estimate, photoCount, onRefresh, onClose }: { estimate?: StorageEstimate; photoCount: number; onRefresh: () => void; onClose: () => void }) {
