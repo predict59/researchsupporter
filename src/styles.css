@@ -1895,6 +1895,13 @@ textarea { min-height: 110px; resize: vertical; }
   gap: 8px;
   align-items: center;
 }
+.assignment-list-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .assignment-section-head strong,
 .assignment-list-head strong {
   display: block;
@@ -1981,9 +1988,19 @@ textarea { min-height: 110px; resize: vertical; }
   justify-self: end;
   white-space: nowrap;
 }
+.visit-order-modal {
+  width: min(720px, calc(100vw - 24px));
+}
+.visit-order-list {
+  display: grid;
+  gap: 6px;
+  max-height: min(56dvh, 520px);
+  overflow: auto;
+  padding-right: 2px;
+}
 .visit-order-row {
   display: grid;
-  grid-template-columns: 26px 54px minmax(0, 1fr) auto;
+  grid-template-columns: 24px 54px minmax(0, 1fr) auto auto;
   gap: 8px;
   align-items: center;
   min-height: 54px;
@@ -2275,6 +2292,9 @@ textarea { min-height: 110px; resize: vertical; }
     grid-template-columns: 1fr;
     align-items: stretch;
   }
+  .assignment-list-title {
+    justify-content: space-between;
+  }
   .assignment-actions {
     justify-content: stretch;
   }
@@ -2357,6 +2377,30 @@ textarea { min-height: 110px; resize: vertical; }
     min-height: 44px;
     padding: 0 6px;
     font-size: 15px;
+  }
+  .visit-order-row {
+    grid-template-columns: 20px 44px minmax(0, 1fr) auto;
+    min-height: 48px;
+    gap: 6px;
+  }
+  .visit-order-modal .assignment-stat {
+    display: none;
+  }
+  .visit-order-actions {
+    grid-template-columns: 30px 30px;
+  }
+  .visit-order-actions button {
+    min-height: 30px;
+  }
+  .visit-order-row input {
+    min-height: 34px;
+    font-size: 13px;
+  }
+  .visit-order-name strong {
+    font-size: 13px;
+  }
+  .visit-order-name span {
+    font-size: 10px;
   }
   .confirm-dialog { width: calc(100vw - 24px); }
 }

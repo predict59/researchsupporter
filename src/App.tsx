@@ -8,7 +8,7 @@ import type { AppSettings, BackupPayload, PhotoType, Region, RegionStats, StoreO
 
 type View = "upload" | "regions" | "assignment" | "workspace" | "store" | "items" | "item" | "backup" | "validation";
 type Filter = "전체" | "미완료" | "미조사" | "조사중" | "완료" | "사진누락" | "미진열";
-type StoreSort = "이름 순" | "품목 많은 순" | "미완료 많은 순" | "거리 순";
+type StoreSort = "이름 순" | "품목 많은 순" | "미완료 많은 순" | "거리 순" | "임의 지정 순";
 type WorkspaceMode = "list" | "map";
 type ConfirmState = {
   title: string;
@@ -394,6 +394,7 @@ function App() {
   const [storeSort, setStoreSort] = useState<StoreSort>("이름 순");
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("list");
   const [workspaceToolsOpen, setWorkspaceToolsOpen] = useState(false);
+  const [orderEditing, setOrderEditing] = useState(false);
   const [itemToolsOpen, setItemToolsOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [contactStoreId, setContactStoreId] = useState("");
@@ -438,6 +439,7 @@ function App() {
         const bd = hasStoreCoordinates(b) ? distanceKm(userLocation, { latitude: b.latitude!, longitude: b.longitude! }) : Number.POSITIVE_INFINITY;
         return ad - bd || a.storeName.localeCompare(b.storeName, "ko");
       }
+      if (storeSort === "임의 지정 순") return (a.visitOrder ?? Number.MAX_SAFE_INTEGER) - (b.visitOrder ?? Number.MAX_SAFE_INTEGER) || a.storeName.localeCompare(b.storeName, "ko");
       if (storeSort === "품목 많은 순") return bs.total - as.total;
       if (storeSort === "미완료 많은 순") return (bs.notStarted + bs.inProgress) - (as.notStarted + as.inProgress);
       return a.storeName.localeCompare(b.storeName, "ko") || `${a.storeAddress}`.localeCompare(`${b.storeAddress}`, "ko");
@@ -735,6 +737,7 @@ function App() {
     setItemQuery("");
     setFilter("전체");
     setStoreSort("이름 순");
+    setOrderEditing(false);
     setWorkspaceMode("list");
     setPhotosReady(false);
     setPhotos([]);
@@ -752,6 +755,7 @@ function App() {
     setItemQuery("");
     setWorkspaceMode("list");
     setStoreSort("이름 순");
+    setOrderEditing(false);
     setWorkspaceToolsOpen(false);
     setPhotosReady(false);
     setPhotos([]);
@@ -788,6 +792,7 @@ function App() {
     const nextSettings = { ...settings, lastOpenedStoreId: store.id, currentRegion: store.region };
     setSettingsState(nextSettings);
     setView("store");
+    setOrderEditing(false);
     saveSettings(nextSettings);
   }
 
@@ -799,6 +804,13 @@ function App() {
 
   async function setStoresAssigned(targetStores: SurveyStore[], assigned: boolean) {
     const updated = targetStores.map((store) => ({ ...store, mapIncluded: assigned, updatedAt: now() }));
+    await Promise.all(updated.map(putStore));
+    const updates = new Map(updated.map((store) => [store.id, store]));
+    setStores((old) => old.map((store) => updates.get(store.id) ?? store));
+  }
+
+  async function updateStoreVisitOrders(orderedStores: SurveyStore[]) {
+    const updated = orderedStores.map((store, index) => ({ ...store, visitOrder: index + 1, updatedAt: now() }));
     await Promise.all(updated.map(putStore));
     const updates = new Map(updated.map((store) => [store.id, store]));
     setStores((old) => old.map((store) => updates.get(store.id) ?? store));
@@ -1239,9 +1251,15 @@ function App() {
                   <option>품목 많은 순</option>
                   <option>미완료 많은 순</option>
                   <option disabled={!userLocation}>거리 순</option>
+                  <option>임의 지정 순</option>
                 </select>
                 </label>
               </div>
+              {storeSort === "임의 지정 순" && (
+                <button type="button" className="order-edit-toggle" onClick={() => setOrderEditing(true)}>
+                  순서편집
+                </button>
+              )}
               {storeSort === "거리 순" && !assignedRegionStores.some(hasStoreCoordinates) && <p className="small-help warn">매장 위치정보가 없으면 거리순 정렬이 정확하지 않을 수 있습니다.</p>}
             </section>
           )}
@@ -1281,6 +1299,17 @@ function App() {
           )}
           <button type="button" className="location-fab" onClick={() => locateUser({ force: true, focus: true })}>내 위치</button>
         </main>
+      )}
+      {orderEditing && currentRegion && (
+        <VisitOrderModal
+          stores={assignedRegionStores}
+          statsByStore={regionStatsByStore}
+          onSave={async (orderedStores) => {
+            await updateStoreVisitOrders(orderedStores);
+            setOrderEditing(false);
+          }}
+          onClose={() => setOrderEditing(false)}
+        />
       )}
 
       {view === "assignment" && currentRegion && (
@@ -1903,7 +1932,6 @@ function StoreMapView({ stores, statsByStore, userLocation, locationFocusTick, s
           .bindTooltip(`${store.storeName} · ${completed ? "완료" : "미완료"}`)
           .on("click", () => {
             setActiveStoreId(store.id);
-            map.setView(latLng, Math.min(Math.max(map.getZoom(), 15), 16), { animate: true });
           });
       });
       if (userLocation) {
@@ -1987,6 +2015,72 @@ function StoreMapView({ stores, statsByStore, userLocation, locationFocusTick, s
   );
 }
 
+function VisitOrderModal({ stores, statsByStore, onSave, onClose }: { stores: SurveyStore[]; statsByStore: Map<string, RegionStats>; onSave: (stores: SurveyStore[]) => void | Promise<void>; onClose: () => void }) {
+  const initialIds = useMemo(
+    () => [...stores]
+      .sort((a, b) => (a.visitOrder ?? Number.MAX_SAFE_INTEGER) - (b.visitOrder ?? Number.MAX_SAFE_INTEGER) || a.storeName.localeCompare(b.storeName, "ko"))
+      .map((store) => store.id),
+    [stores],
+  );
+  const [draftIds, setDraftIds] = useState(initialIds);
+  useEffect(() => setDraftIds(initialIds), [initialIds.join("|")]);
+  const storeMap = useMemo(() => new Map(stores.map((store) => [store.id, store])), [stores]);
+  const orderedStores = draftIds.map((id) => storeMap.get(id)).filter(Boolean) as SurveyStore[];
+  const move = (index: number, direction: -1 | 1) => {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= draftIds.length) return;
+    setDraftIds((old) => {
+      const next = [...old];
+      [next[index], next[nextIndex]] = [next[nextIndex], next[index]];
+      return next;
+    });
+  };
+  const setOrder = (id: string, value: number) => {
+    const current = draftIds.filter((candidate) => candidate !== id);
+    const index = Math.max(0, Math.min(current.length, value - 1));
+    current.splice(index, 0, id);
+    setDraftIds(current);
+  };
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <section className="modal visit-order-modal">
+        <div className="modal-head">
+          <div>
+            <h2>매장 순서편집</h2>
+            <p>임의 지정 순으로 볼 매장 방문 순서를 조정합니다.</p>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="닫기"><X size={18} /></button>
+        </div>
+        <div className="visit-order-list">
+          {orderedStores.map((store, index) => {
+            const stats = statsByStore.get(store.id) ?? emptyStats;
+            return (
+              <div className="visit-order-row" key={store.id}>
+                <span className="drag-handle">≡</span>
+                <input aria-label="순서" type="number" min={1} max={orderedStores.length} value={index + 1} onChange={(event) => setOrder(store.id, Number(event.target.value) || index + 1)} />
+                <div className="visit-order-name">
+                  <strong title={store.storeName}>{store.storeName}</strong>
+                  <span title={store.storeAddress}>{store.storeAddress || "주소 없음"}</span>
+                </div>
+                <span className="assignment-stat">{stats.completed.toLocaleString()}/{stats.total.toLocaleString()}</span>
+                <div className="visit-order-actions">
+                  <button type="button" onClick={() => move(index, -1)} disabled={index === 0}>↑</button>
+                  <button type="button" onClick={() => move(index, 1)} disabled={index === orderedStores.length - 1}>↓</button>
+                </div>
+              </div>
+            );
+          })}
+          {!orderedStores.length && <p className="muted">담당매장이 없습니다.</p>}
+        </div>
+        <div className="confirm-actions">
+          <button type="button" onClick={onClose}>취소</button>
+          <button type="button" className="primary" onClick={() => onSave(orderedStores)}>저장</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function StoreAssignmentPanel({ stores, totalStores, statsByStore, geocoding, geocodeMessage, onGeocodeMissing, onGeocodeAll, onAssign, onAssignAll, onSave }: { stores: SurveyStore[]; totalStores: number; statsByStore: Map<string, RegionStats>; geocoding: boolean; geocodeMessage: string; onGeocodeMissing: () => void | Promise<void>; onGeocodeAll: () => void | Promise<void>; onAssign: (store: SurveyStore, assigned: boolean) => void | Promise<void>; onAssignAll: (stores: SurveyStore[], assigned: boolean) => void | Promise<void>; onSave: () => void | Promise<void> }) {
   const assignedCount = stores.filter((store) => store.mapIncluded === true).length;
   const missingCoordinateCount = stores.filter((store) => store.mapIncluded === true && !hasStoreCoordinates(store)).length;
@@ -2010,11 +2104,10 @@ function StoreAssignmentPanel({ stores, totalStores, statsByStore, geocoding, ge
         </div>
       </div>
       {geocodeMessage && <p className="map-location-message">{geocodeMessage}</p>}
-      {missingCoordinateCount > 0 && <p className="small-help warn">위치정보 없는 담당매장 {missingCoordinateCount.toLocaleString()}개</p>}
       <div className="assignment-list-head">
-        <div>
-          <strong>매장 선택</strong>
-          <span>지역 전체 {totalStores.toLocaleString()}개</span>
+        <div className="assignment-list-title">
+          <strong>매장 선택 ({assignedCount.toLocaleString()}/{totalStores.toLocaleString()})</strong>
+          <span>* 위치없는 매장 {missingCoordinateCount.toLocaleString()}개</span>
         </div>
         <div className="assignment-actions">
           <button type="button" onClick={() => onAssignAll(stores, true)}>전체 선택</button>
