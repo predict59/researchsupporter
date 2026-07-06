@@ -9,6 +9,7 @@
 - 커밋 메시지: `Restore gh-pages deployment workflow`
 - GitHub Pages 설정이 `gh-pages` 브랜치 배포 기준으로 유지되어 있어, 배포 워크플로우를 기존 `peaceiris/actions-gh-pages` 방식으로 되돌렸습니다.
 - `main` 브랜치에서 빌드한 `dist` 결과물을 다시 `gh-pages` 브랜치에 게시하도록 복구했습니다.
+- 빌드 결과물이 이전과 같아도 `gh-pages` 배포 커밋을 생성하도록 설정해, 실패한 Pages 배포를 다시 트리거할 수 있게 했습니다.
 
 ### 바코드 이미지 엑셀 매칭 보정
 - 커밋 메시지: `Fix barcode image workbook matching`
