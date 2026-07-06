@@ -19,6 +19,15 @@ type ConfirmState = {
   danger?: boolean;
   plain?: boolean;
 };
+type AppHistoryState = {
+  app: "research-supporter";
+  view: View;
+  currentRegion?: string;
+  selectedStoreId?: string;
+  selectedItemId?: string;
+  workspaceMode?: WorkspaceMode;
+  barcodeModalItemId?: string;
+};
 
 const mapLinks = (address: string) => [
   ["구글", `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapSearchAddress(address))}`],
@@ -414,6 +423,14 @@ function App() {
   const confirmResolver = useRef<((value: boolean) => void) | null>(null);
   const locatePromiseRef = useRef<Promise<{ latitude: number; longitude: number } | null> | null>(null);
   const initialLocationRequested = useRef(false);
+  const historyReadyRef = useRef(false);
+  const restoringHistoryRef = useRef(false);
+  const lastHistoryViewRef = useRef<View>("upload");
+  const viewRef = useRef<View>("upload");
+  const lastExitBackRef = useRef(0);
+  const exitToastTimerRef = useRef<number | undefined>();
+  const allowBrowserExitRef = useRef(false);
+  const [appBackToast, setAppBackToast] = useState("");
 
   const currentRegion = settings.currentRegion;
   const regionItems = useMemo(() => items.filter((item) => item.region === currentRegion), [items, currentRegion]);
@@ -526,7 +543,65 @@ function App() {
     initialLocationRequested.current = true;
     void locateUser();
   }, []);
+
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
+
+  useEffect(() => {
+    if (isBooting) return;
+    const state = makeHistoryState();
+    if (!historyReadyRef.current) {
+      window.history.replaceState(state, "", window.location.href);
+      historyReadyRef.current = true;
+      lastHistoryViewRef.current = view;
+      return;
+    }
+    if (restoringHistoryRef.current) {
+      window.history.replaceState(state, "", window.location.href);
+      lastHistoryViewRef.current = view;
+      restoringHistoryRef.current = false;
+      return;
+    }
+    if (lastHistoryViewRef.current !== view) {
+      window.history.pushState(state, "", window.location.href);
+      lastHistoryViewRef.current = view;
+    } else {
+      window.history.replaceState(state, "", window.location.href);
+    }
+  }, [isBooting, view, currentRegion, selectedStoreId, selectedItemId, workspaceMode, barcodeModalItemId]);
   const stats = useMemo(() => summarize(regionItems, photos), [regionItems, photos]);
+
+  const makeHistoryState = (): AppHistoryState => ({
+    app: "research-supporter",
+    view,
+    currentRegion,
+    selectedStoreId,
+    selectedItemId,
+    workspaceMode,
+    barcodeModalItemId,
+  });
+
+  const applyHistoryState = (state: AppHistoryState) => {
+    restoringHistoryRef.current = true;
+    setMenuOpen(false);
+    setSummaryOpen(false);
+    setContactStoreId("");
+    setStorageOpen(false);
+    setFrontPhotoPickerOpen(false);
+    setBarcodeModalItemId(state.barcodeModalItemId ?? "");
+    setSelectedStoreId(state.selectedStoreId ?? "");
+    setSelectedItemId(state.selectedItemId ?? "");
+    setWorkspaceMode(state.workspaceMode ?? "list");
+    if (state.currentRegion !== undefined) setSettingsState((old) => ({ ...old, currentRegion: state.currentRegion }));
+    setView(state.view);
+  };
+
+  const showExitToast = () => {
+    setAppBackToast("한 번 더 누르면 종료됩니다.");
+    if (exitToastTimerRef.current) window.clearTimeout(exitToastTimerRef.current);
+    exitToastTimerRef.current = window.setTimeout(() => setAppBackToast(""), 1800);
+  };
 
   function askConfirm(options: ConfirmState) {
     return new Promise<boolean>((resolve) => {
@@ -1172,6 +1247,35 @@ function App() {
       setView("upload");
     }
   };
+  useEffect(() => {
+    const onPopState = (event: PopStateEvent) => {
+      if (allowBrowserExitRef.current) return;
+      const state = event.state as AppHistoryState | null;
+      if (state?.app === "research-supporter") {
+        applyHistoryState(state);
+        return;
+      }
+
+      const rootView = viewRef.current === "regions" || viewRef.current === "upload";
+      if (rootView) {
+        const nowTime = Date.now();
+        if (nowTime - lastExitBackRef.current < 1800) {
+          allowBrowserExitRef.current = true;
+          window.history.back();
+          return;
+        }
+        lastExitBackRef.current = nowTime;
+        showExitToast();
+        window.history.pushState(makeHistoryState(), "", window.location.href);
+        return;
+      }
+
+      goBack();
+      window.history.pushState(makeHistoryState(), "", window.location.href);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [view, currentRegion, selectedStoreId, selectedItemId, workspaceMode, barcodeModalItemId, regions.length, barcodeReturnItemId]);
   const screenTitle =
     view === "regions" ? "메인"
     : view === "assignment" ? "담당매장 관리"
@@ -1565,6 +1669,7 @@ function App() {
         />
       )}
       {confirmState && <ConfirmDialog state={confirmState} onClose={closeConfirm} />}
+      {appBackToast && <div className="save-toast">{appBackToast}</div>}
       {summaryOpen && view === "regions" && (
         <SummaryModal
           region="전체 지역"
