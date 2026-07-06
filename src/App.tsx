@@ -1403,9 +1403,9 @@ function App() {
               {frontPhoto && <PhotoPreview photo={frontPhoto} className="wide-preview" />}
               <div className="photo-actions store-front-actions">
                 {!selectedStore.frontPhotoId && <PhotoInput label="촬영/첨부" onFile={saveStorePhoto} />}
-                <button type="button" disabled={reusableFrontPhotos.length === 0} onClick={() => setFrontPhotoPickerOpen(true)}>기존 사진 사용</button>
                 {selectedStore.frontPhotoId && <button className="danger" onClick={removeStorePhoto}>지우기</button>}
               </div>
+              <button type="button" className="store-front-reuse" onClick={() => setFrontPhotoPickerOpen(true)}>기존 사진 사용</button>
             </div>
               );
             })()}

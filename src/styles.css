@@ -1133,6 +1133,13 @@ textarea { min-height: 110px; resize: vertical; }
 .store-front-actions .photo-button {
   min-width: 0;
 }
+.store-front-reuse {
+  width: 100%;
+  min-height: 42px;
+  border: 2px dashed #94a3b8;
+  background: #f8fafc;
+  font-weight: 900;
+}
 .store-date-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
