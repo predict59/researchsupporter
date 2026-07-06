@@ -832,6 +832,16 @@ function App() {
     saveSettings(nextSettings);
   }
 
+  function openStoreMap() {
+    setMapFocusStoreId("");
+    setWorkspaceMode("map");
+  }
+
+  function openStoreOnMap(store: SurveyStore) {
+    setMapFocusStoreId(store.id);
+    setWorkspaceMode("map");
+  }
+
   async function setStoreAssigned(store: SurveyStore, assigned: boolean) {
     const nextStore = { ...store, mapIncluded: assigned, updatedAt: now() };
     await putStore(nextStore);
@@ -1310,7 +1320,7 @@ function App() {
         <main className="page workspace-page">
           <nav className="workspace-tabs" aria-label="매장 보기 방식">
             <button type="button" className={workspaceMode === "list" ? "active" : ""} onClick={() => setWorkspaceMode("list")}>매장 리스트</button>
-            <button type="button" className={workspaceMode === "map" ? "active" : ""} onClick={() => { if (canUseStoreMap) { setMapFocusStoreId(""); setWorkspaceMode("map"); } }} disabled={!canUseStoreMap}>매장 지도</button>
+            <button type="button" className={workspaceMode === "map" ? "active" : ""} onClick={() => canUseStoreMap && openStoreMap()} disabled={!canUseStoreMap}>매장 지도</button>
           </nav>
           {workspaceMode === "list" && (
             <div className="sticky-search workspace-search">
@@ -1352,7 +1362,7 @@ function App() {
                   onOpen={() => openStore(store)}
                   onContacts={() => setContactStoreId(store.id)}
                   onAssignToggle={() => setStoreAssigned(store, store.mapIncluded !== true)}
-                  onMapView={() => { setMapFocusStoreId(store.id); setWorkspaceMode("map"); }}
+                  onMapView={() => openStoreOnMap(store)}
                   distanceText={userLocation && hasStoreCoordinates(store) ? formatDistance(distanceKm(userLocation, { latitude: store.latitude!, longitude: store.longitude! })) : ""}
                 />
               );
