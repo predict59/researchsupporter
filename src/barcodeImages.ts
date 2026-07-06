@@ -2,11 +2,15 @@ import JSZip from "jszip";
 import * as XLSX from "xlsx";
 
 const clean = (value: unknown) => String(value ?? "").trim();
-const onlyDigits = (value: string) => value.replace(/\D/g, "");
 
 type BarcodeRow = {
   excelRow: number;
-  barcode: string;
+  itemNo: string;
+};
+
+type BarcodeSheetMap = {
+  rows: BarcodeRow[];
+  imageColumn: number;
 };
 
 const mimeFromPath = (path: string) => {
@@ -68,20 +72,23 @@ function workbookSheetPaths(workbookXml: string, workbookRelsXml: string) {
   return map;
 }
 
-function barcodeRowsFromSheet(sheet: XLSX.WorkSheet): BarcodeRow[] {
+function barcodeRowsFromSheet(sheet: XLSX.WorkSheet): BarcodeSheetMap | null {
   const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "" });
   const headerIndex = matrix.findIndex((row) => {
     const values = row.map(clean);
     return values.includes("순번") && values.includes("물품명") && values.includes("바코드");
   });
-  if (headerIndex === -1) return [];
+  if (headerIndex === -1) return null;
   const headers = matrix[headerIndex].map(clean);
+  const itemNoColumn = headers.findIndex((header) => header === "순번");
   const barcodeColumn = headers.findIndex((header) => header === "바코드");
-  if (barcodeColumn === -1) return [];
-  return matrix
+  const imageColumn = headers.findIndex((header) => header === "바코드 이미지");
+  if (itemNoColumn === -1 || barcodeColumn === -1 || imageColumn === -1) return null;
+  const rows = matrix
     .slice(headerIndex + 1)
-    .map((row, index) => ({ excelRow: headerIndex + index + 1, barcode: onlyDigits(clean(row[barcodeColumn])) }))
-    .filter((row) => row.barcode);
+    .map((row, index) => ({ excelRow: headerIndex + index + 1, itemNo: clean(row[itemNoColumn]) }))
+    .filter((row) => row.itemNo);
+  return { rows, imageColumn: imageColumn + 1 };
 }
 
 export async function extractBarcodeImages(source: Blob | ArrayBuffer) {
@@ -94,9 +101,9 @@ export async function extractBarcodeImages(source: Blob | ArrayBuffer) {
   const sheetPathByName = workbookXml && workbookRelsXml ? workbookSheetPaths(workbookXml, workbookRelsXml) : new Map<string, string>();
 
   for (const [sheetIndex, sheetName] of workbook.SheetNames.entries()) {
-    const rows = barcodeRowsFromSheet(workbook.Sheets[sheetName]);
-    if (!rows.length) continue;
-    const barcodeByRow = new Map(rows.map((row) => [row.excelRow, row.barcode]));
+    const barcodeSheet = barcodeRowsFromSheet(workbook.Sheets[sheetName]);
+    if (!barcodeSheet?.rows.length) continue;
+    const itemNoByRow = new Map(barcodeSheet.rows.map((row) => [row.excelRow, row.itemNo]));
 
     const sheetPath = sheetPathByName.get(sheetName) ?? `xl/worksheets/sheet${sheetIndex + 1}.xml`;
     const sheetXml = await zip.file(sheetPath)?.async("string");
@@ -128,17 +135,19 @@ export async function extractBarcodeImages(source: Blob | ArrayBuffer) {
 
     for (const anchor of anchors) {
       const rowText = anchor.getElementsByTagName("xdr:row")[0]?.textContent ?? anchor.getElementsByTagName("row")[0]?.textContent ?? "";
+      const colText = anchor.getElementsByTagName("xdr:col")[0]?.textContent ?? anchor.getElementsByTagName("col")[0]?.textContent ?? "";
       const anchorRow = Number(rowText) + 1;
-      if (!Number.isFinite(anchorRow)) continue;
-      const barcode = barcodeByRow.get(anchorRow) ?? "";
-      if (!barcode || index[barcode]) continue;
+      const anchorColumn = Number(colText) + 1;
+      if (!Number.isFinite(anchorRow) || anchorColumn !== barcodeSheet.imageColumn) continue;
+      const itemNo = itemNoByRow.get(anchorRow) ?? "";
+      if (!itemNo || index[itemNo]) continue;
       const blip = anchor.getElementsByTagName("a:blip")[0] ?? anchor.getElementsByTagName("blip")[0];
       const imageRid = blip?.getAttribute("r:embed") ?? blip?.getAttribute("embed");
       const imagePath = imageRid ? drawingRels.get(imageRid) : "";
       if (!imagePath) continue;
       const imageBuffer = await zip.file(imagePath)?.async("arraybuffer");
       if (!imageBuffer) continue;
-      index[barcode] = arrayBufferToDataUrl(imageBuffer, mimeFromPath(imagePath));
+      index[itemNo] = arrayBufferToDataUrl(imageBuffer, mimeFromPath(imagePath));
     }
   }
 

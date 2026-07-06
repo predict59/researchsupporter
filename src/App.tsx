@@ -93,7 +93,7 @@ const formatDistance = (km?: number) => {
   return km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(km < 10 ? 1 : 0)}km`;
 };
 const barcodeImageSrc = (item: SurveyItem, index: BarcodeImageIndex) => {
-  const path = index[onlyDigits(item.barcode)];
+  const path = index[item.itemNo] || index[onlyDigits(item.barcode)];
   if (!path) return "";
   return path.startsWith("data:") ? path : `${import.meta.env.BASE_URL}${path}`;
 };
