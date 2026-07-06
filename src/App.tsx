@@ -553,6 +553,7 @@ function App() {
     const state = makeHistoryState();
     if (!historyReadyRef.current) {
       window.history.replaceState(state, "", window.location.href);
+      window.history.pushState(state, "", window.location.href);
       historyReadyRef.current = true;
       lastHistoryViewRef.current = view;
       return;
@@ -1251,12 +1252,25 @@ function App() {
     const onPopState = (event: PopStateEvent) => {
       if (allowBrowserExitRef.current) return;
       const state = event.state as AppHistoryState | null;
+      const rootView = viewRef.current === "regions" || viewRef.current === "upload";
+      const targetRootView = state?.app === "research-supporter" && (state.view === "regions" || state.view === "upload");
+      if (rootView && targetRootView) {
+        const nowTime = Date.now();
+        if (nowTime - lastExitBackRef.current < 1800) {
+          allowBrowserExitRef.current = true;
+          window.history.back();
+          return;
+        }
+        lastExitBackRef.current = nowTime;
+        showExitToast();
+        window.history.pushState(makeHistoryState(), "", window.location.href);
+        return;
+      }
       if (state?.app === "research-supporter") {
         applyHistoryState(state);
         return;
       }
 
-      const rootView = viewRef.current === "regions" || viewRef.current === "upload";
       if (rootView) {
         const nowTime = Date.now();
         if (nowTime - lastExitBackRef.current < 1800) {
