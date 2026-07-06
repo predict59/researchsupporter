@@ -1,4 +1,4 @@
-const CACHE_NAME = "mw-price-survey-v22";
+const CACHE_NAME = "mw-price-survey-v23";
 const BASE_PATH = new URL(self.registration.scope).pathname.replace(/\/$/, "");
 const path = (value) => `${BASE_PATH}${value}`;
 const APP_SHELL = [path("/"), path("/index.html"), path("/manifest.json"), path("/pwa-icon.svg")];
