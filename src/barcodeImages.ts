@@ -84,19 +84,6 @@ function barcodeRowsFromSheet(sheet: XLSX.WorkSheet): BarcodeRow[] {
     .filter((row) => row.barcode);
 }
 
-function nearestBarcode(rows: BarcodeRow[], anchorRow: number) {
-  let best: BarcodeRow | undefined;
-  let bestDistance = Number.POSITIVE_INFINITY;
-  rows.forEach((row) => {
-    const distance = Math.abs(row.excelRow - anchorRow);
-    if (distance < bestDistance && distance <= 2) {
-      best = row;
-      bestDistance = distance;
-    }
-  });
-  return best?.barcode ?? "";
-}
-
 export async function extractBarcodeImages(source: Blob | ArrayBuffer) {
   const buffer = source instanceof Blob ? await source.arrayBuffer() : source;
   const workbook = XLSX.read(buffer, { type: "array" });
@@ -109,6 +96,7 @@ export async function extractBarcodeImages(source: Blob | ArrayBuffer) {
   for (const [sheetIndex, sheetName] of workbook.SheetNames.entries()) {
     const rows = barcodeRowsFromSheet(workbook.Sheets[sheetName]);
     if (!rows.length) continue;
+    const barcodeByRow = new Map(rows.map((row) => [row.excelRow, row.barcode]));
 
     const sheetPath = sheetPathByName.get(sheetName) ?? `xl/worksheets/sheet${sheetIndex + 1}.xml`;
     const sheetXml = await zip.file(sheetPath)?.async("string");
@@ -142,7 +130,7 @@ export async function extractBarcodeImages(source: Blob | ArrayBuffer) {
       const rowText = anchor.getElementsByTagName("xdr:row")[0]?.textContent ?? anchor.getElementsByTagName("row")[0]?.textContent ?? "";
       const anchorRow = Number(rowText) + 1;
       if (!Number.isFinite(anchorRow)) continue;
-      const barcode = nearestBarcode(rows, anchorRow);
+      const barcode = barcodeByRow.get(anchorRow) ?? "";
       if (!barcode || index[barcode]) continue;
       const blip = anchor.getElementsByTagName("a:blip")[0] ?? anchor.getElementsByTagName("blip")[0];
       const imageRid = blip?.getAttribute("r:embed") ?? blip?.getAttribute("embed");
