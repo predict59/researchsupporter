@@ -5,11 +5,10 @@
 
 ## 2026-07-06
 
-### GitHub Pages 배포 방식 전환
-- 커밋 메시지: `Switch to direct Pages deployment`
-- `gh-pages` 브랜치에 빌드 결과물을 푸시한 뒤 GitHub Pages가 다시 배포하던 기존 흐름을 제거했습니다.
-- `actions/configure-pages`, `actions/upload-pages-artifact`, `actions/deploy-pages`를 사용하는 공식 Pages artifact 배포 방식으로 전환했습니다.
-- `gh-pages` 브랜치 자동 배포 단계에서 반복 발생하던 `Deployment failed, try again later.` 오류를 피하도록 배포 경로를 단순화했습니다.
+### GitHub Pages gh-pages 배포 방식 복구
+- 커밋 메시지: `Restore gh-pages deployment workflow`
+- GitHub Pages 설정이 `gh-pages` 브랜치 배포 기준으로 유지되어 있어, 배포 워크플로우를 기존 `peaceiris/actions-gh-pages` 방식으로 되돌렸습니다.
+- `main` 브랜치에서 빌드한 `dist` 결과물을 다시 `gh-pages` 브랜치에 게시하도록 복구했습니다.
 
 ### 바코드 이미지 엑셀 매칭 보정
 - 커밋 메시지: `Fix barcode image workbook matching`
