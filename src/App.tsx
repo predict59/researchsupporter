@@ -380,6 +380,7 @@ function App() {
   const [photos, setPhotos] = useState<SurveyPhoto[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState("");
   const [selectedItemId, setSelectedItemId] = useState("");
+  const [mapFocusStoreId, setMapFocusStoreId] = useState("");
   const [regionQuery, setRegionQuery] = useState("");
   const [storeQuery, setStoreQuery] = useState("");
   const [itemQuery, setItemQuery] = useState("");
@@ -769,6 +770,7 @@ function App() {
     setSettingsState(nextSettings);
     setSelectedStoreId("");
     setSelectedItemId("");
+    setMapFocusStoreId("");
     setStoreQuery("");
     setItemQuery("");
     setFilter("전체");
@@ -786,6 +788,7 @@ function App() {
     setSettingsState(nextSettings);
     setSelectedStoreId("");
     setSelectedItemId("");
+    setMapFocusStoreId("");
     setStoreQuery("");
     setItemQuery("");
     setWorkspaceMode("list");
@@ -1307,7 +1310,7 @@ function App() {
         <main className="page workspace-page">
           <nav className="workspace-tabs" aria-label="매장 보기 방식">
             <button type="button" className={workspaceMode === "list" ? "active" : ""} onClick={() => setWorkspaceMode("list")}>매장 리스트</button>
-            <button type="button" className={workspaceMode === "map" ? "active" : ""} onClick={() => canUseStoreMap && setWorkspaceMode("map")} disabled={!canUseStoreMap}>매장 지도</button>
+            <button type="button" className={workspaceMode === "map" ? "active" : ""} onClick={() => { if (canUseStoreMap) { setMapFocusStoreId(""); setWorkspaceMode("map"); } }} disabled={!canUseStoreMap}>매장 지도</button>
           </nav>
           {workspaceMode === "list" && (
             <div className="sticky-search workspace-search">
@@ -1349,6 +1352,7 @@ function App() {
                   onOpen={() => openStore(store)}
                   onContacts={() => setContactStoreId(store.id)}
                   onAssignToggle={() => setStoreAssigned(store, store.mapIncluded !== true)}
+                  onMapView={() => { setMapFocusStoreId(store.id); setWorkspaceMode("map"); }}
                   distanceText={userLocation && hasStoreCoordinates(store) ? formatDistance(distanceKm(userLocation, { latitude: store.latitude!, longitude: store.longitude! })) : ""}
                 />
               );
@@ -1361,13 +1365,13 @@ function App() {
               statsByStore={regionStatsByStore}
               userLocation={userLocation}
               locationFocusTick={locationFocusTick}
-              selectedStoreId={selectedStoreId}
+              focusStoreId={mapFocusStoreId}
               onOpen={(store) => openStore(store)}
               onContacts={(store) => setContactStoreId(store.id)}
               onToggle={(store) => setStoreAssigned(store, false)}
             />
           )}
-          <button type="button" className="location-fab" onClick={() => locateUser({ force: true, focus: true })}>내 위치</button>
+          <button type="button" className="location-fab" onClick={() => { setMapFocusStoreId(""); locateUser({ force: true, focus: true }); }}>내 위치</button>
         </main>
       )}
       {view === "assignment" && currentRegion && (
@@ -1842,7 +1846,7 @@ function isStoreComplete(store: SurveyStore, stats: RegionStats) {
   return Boolean(store.frontPhotoId) && stats.total > 0 && stats.completed === stats.total;
 }
 
-function StoreMoreMenu({ store, onAssignToggle }: { store: SurveyStore; onAssignToggle: () => void }) {
+function StoreMoreMenu({ store, onAssignToggle, onMapView }: { store: SurveyStore; onAssignToggle: () => void; onMapView?: () => void }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -1863,6 +1867,7 @@ function StoreMoreMenu({ store, onAssignToggle }: { store: SurveyStore; onAssign
       <button type="button" className="card-menu-trigger" aria-label="매장 메뉴" aria-expanded={open} onClick={() => setOpen((value) => !value)}><MoreVertical size={18} /></button>
       {open && (
         <div className="menu-popover">
+          {onMapView && hasStoreCoordinates(store) && <button type="button" onClick={() => closeAfter(onMapView)}>매장지도에서 보기</button>}
           <button type="button" onClick={() => closeAfter(onAssignToggle)}>{store.mapIncluded === true ? "담당매장 제외" : "담당매장 포함"}</button>
           {mapLinks(store.storeAddress).map(([name, href]) => <a key={name} href={href} target="_blank" onClick={() => setOpen(false)}>{name} 지도 보기</a>)}
         </div>
@@ -1879,6 +1884,7 @@ function StoreCard({
   onOpen,
   onContacts,
   onAssignToggle,
+  onMapView,
   distanceText,
 }: {
   store: SurveyStore;
@@ -1888,6 +1894,7 @@ function StoreCard({
   onOpen: () => void;
   onContacts: () => void;
   onAssignToggle: () => void;
+  onMapView: () => void;
   distanceText?: string;
 }) {
   const completed = items.filter((item) => item.status === "완료");
@@ -1903,7 +1910,7 @@ function StoreCard({
           <h2 className="store-card-title" title={store.storeName}><span className="store-name-text">{store.storeName}</span><span className={`operating-badge small ${displayOperatingStatus === "미확인" ? "unknown" : operatingClass(displayOperatingStatus as StoreOperatingStatus)}`}>{displayOperatingStatus}</span></h2>
           <p>{store.storeAddress || "주소 없음"}</p>
         </div>
-        <StoreMoreMenu store={store} onAssignToggle={onAssignToggle} />
+        <StoreMoreMenu store={store} onAssignToggle={onAssignToggle} onMapView={onMapView} />
       </div>
       {store.mapIncluded !== true && <span className="map-excluded-badge">담당 미선택</span>}
       <div className="store-progress">
@@ -1926,13 +1933,12 @@ function StoreCard({
   );
 }
 
-function StoreMapView({ stores, statsByStore, userLocation, locationFocusTick, selectedStoreId, onOpen, onContacts, onToggle }: { stores: SurveyStore[]; statsByStore: Map<string, RegionStats>; userLocation: { latitude: number; longitude: number } | null; locationFocusTick: number; selectedStoreId: string; onOpen: (store: SurveyStore) => void; onContacts: (store: SurveyStore) => void; onToggle: (store: SurveyStore) => void | Promise<void> }) {
+function StoreMapView({ stores, statsByStore, userLocation, locationFocusTick, focusStoreId, onOpen, onContacts, onToggle }: { stores: SurveyStore[]; statsByStore: Map<string, RegionStats>; userLocation: { latitude: number; longitude: number } | null; locationFocusTick: number; focusStoreId: string; onOpen: (store: SurveyStore) => void; onContacts: (store: SurveyStore) => void; onToggle: (store: SurveyStore) => void | Promise<void> }) {
   const mapNode = useRef<HTMLDivElement | null>(null);
   const leafletMap = useRef<import("leaflet").Map | null>(null);
   const markerLayer = useRef<import("leaflet").LayerGroup | null>(null);
   const mappedStores = useMemo(() => stores.filter(hasStoreCoordinates), [stores]);
-  const initialActiveId = selectedStoreId && mappedStores.some((store) => store.id === selectedStoreId) ? selectedStoreId : "";
-  const [activeStoreId, setActiveStoreId] = useState(initialActiveId);
+  const [activeStoreId, setActiveStoreId] = useState("");
   const [mapReady, setMapReady] = useState(0);
   const activeStore = stores.find((store) => store.id === activeStoreId);
   const completedCount = stores.filter((store) => isStoreComplete(store, statsByStore.get(store.id) ?? emptyStats)).length;
@@ -2053,29 +2059,28 @@ function StoreMapView({ stores, statsByStore, userLocation, locationFocusTick, s
   }, [mapReady, mapSignature, mappedStores, statsByStore, userLocation]);
 
   useEffect(() => {
-    if (selectedStoreId && mappedStores.some((store) => store.id === selectedStoreId)) {
-      setActiveStoreId(selectedStoreId);
-      return;
-    }
     if (activeStoreId && !mappedStores.some((store) => store.id === activeStoreId)) setActiveStoreId("");
-  }, [selectedStoreId, mappedStores, activeStoreId]);
+  }, [mappedStores, activeStoreId]);
 
   useEffect(() => {
     const map = leafletMap.current;
     if (!map || !mapReady) return;
-    const selectedStore = mappedStores.find((store) => store.id === selectedStoreId);
-    if (selectedStore) {
-      map.setView([selectedStore.latitude!, selectedStore.longitude!], Math.min(Math.max(map.getZoom(), 15), 16), { animate: false });
+    const focusStore = mappedStores.find((store) => store.id === focusStoreId);
+    if (focusStore) {
+      setActiveStoreId(focusStore.id);
+      map.setView([focusStore.latitude!, focusStore.longitude!], Math.min(Math.max(map.getZoom(), 15), 16), { animate: false });
       return;
     }
+    setActiveStoreId("");
     if (userLocation) {
       map.setView([userLocation.latitude, userLocation.longitude], Math.min(Math.max(map.getZoom(), 15), 16), { animate: false });
     }
-  }, [mapReady, selectedStoreId, mappedStores, userLocation]);
+  }, [mapReady, focusStoreId, mappedStores, userLocation]);
 
   useEffect(() => {
     const map = leafletMap.current;
     if (!map || !mapReady || !userLocation || !locationFocusTick) return;
+    setActiveStoreId("");
     map.setView([userLocation.latitude, userLocation.longitude], Math.min(Math.max(map.getZoom(), 15), 16), { animate: true });
   }, [mapReady, userLocation, locationFocusTick]);
 
