@@ -7,7 +7,7 @@ import { mapSearchAddress, requiredPhotoLabels, summarize } from "./logic";
 import type { AppSettings, BackupPayload, PhotoType, Region, RegionStats, StoreOperatingStatus, SurveyItem, SurveyPhoto, SurveyStore } from "./types";
 
 type View = "upload" | "regions" | "assignment" | "workspace" | "store" | "items" | "item" | "backup" | "validation";
-type Filter = "전체" | "미완료" | "미조사" | "조사중" | "완료" | "사진누락";
+type Filter = "전체" | "미완료" | "미조사" | "조사중" | "완료" | "사진누락" | "미진열";
 type StoreSort = "이름 순" | "품목 많은 순" | "미완료 많은 순" | "거리 순";
 type WorkspaceMode = "list" | "map";
 type ConfirmState = {
@@ -39,6 +39,8 @@ const PRICE_DIFF_WARN_PERCENT = 30;
 const TARGET_MAP_URL = "https://www.google.com/maps/d/u/1/edit?mid=1ej99Lo6WS4GROBCQPr0a66MhQR_vXuM&usp=sharing";
 const BASE_SURVEY_URL = `${import.meta.env.BASE_URL}data/base-survey.xlsx`;
 const BASE_CONTACTS_URL = `${import.meta.env.BASE_URL}data/base-contacts.xlsx`;
+const BARCODE_INDEX_URL = `${import.meta.env.BASE_URL}data/barcode-index.json`;
+type BarcodeImageIndex = Record<string, string>;
 type PriceCandidate = { value: number; score: number; source: "comma" | "plain" };
 const PRICE_KEYWORDS = /원|가격|정상|판매|할인|행사|특가|세일|SALE|sale|올리브|카드|멤버십|회원|쿠폰/;
 const PRICE_MAX_VALUE = 999999;
@@ -90,6 +92,10 @@ const distanceKm = (from: { latitude: number; longitude: number }, to: { latitud
 const formatDistance = (km?: number) => {
   if (km === undefined) return "";
   return km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(km < 10 ? 1 : 0)}km`;
+};
+const barcodeImageSrc = (item: SurveyItem, index: BarcodeImageIndex) => {
+  const path = index[onlyDigits(item.barcode)];
+  return path ? `${import.meta.env.BASE_URL}${path}` : "";
 };
 
 function barcodeScanRegions(width: number, height: number) {
@@ -366,6 +372,8 @@ function App() {
   const [storeQuery, setStoreQuery] = useState("");
   const [itemQuery, setItemQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("전체");
+  const [barcodeIndex, setBarcodeIndex] = useState<BarcodeImageIndex>({});
+  const [barcodeModalItemId, setBarcodeModalItemId] = useState("");
   const [baseMessage, setBaseMessage] = useState("");
   const [isBaseLoading, setIsBaseLoading] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -431,7 +439,8 @@ function App() {
     if (!searchText.includes(storeQuery)) return false;
     const ownStats = regionStatsByStore.get(store.id) ?? emptyStats;
     if (filter === "미완료" && ownStats.completed >= ownStats.total) return false;
-    if (filter !== "전체" && filter !== "미완료" && filter !== "사진누락" && !ownItems.some((item) => item.status === filter)) return false;
+    if (filter === "미진열" && !ownItems.some((item) => item.abnormalStatus === "미진열")) return false;
+    if (filter !== "전체" && filter !== "미완료" && filter !== "사진누락" && filter !== "미진열" && !ownItems.some((item) => item.status === filter)) return false;
     if (filter === "사진누락" && !photosReady) return false;
     if (filter === "사진누락" && ownStats.photoMissing === 0) return false;
     return true;
@@ -460,6 +469,17 @@ function App() {
   const selectedStore = stores.find((store) => store.id === selectedStoreId);
   const storeItems = useMemo(() => items.filter((item) => item.storeId === selectedStoreId), [items, selectedStoreId]);
   const selectedItem = items.find((item) => item.id === selectedItemId);
+  const visibleStoreItems = useMemo(() => storeItems
+    .filter((item) => `${item.itemNo} ${item.productName} ${item.barcode} ${item.companyManager} ${item.companyName} ${item.companyTel} ${item.martTel}`.includes(itemQuery))
+    .filter((item) => {
+      if (filter === "전체") return true;
+      if (filter === "미완료") return item.status !== "완료";
+      if (filter === "사진누락") return item.status === "완료" && requiredPhotoLabels(item, photos.filter((photo) => photo.storeId === item.storeId)).length > 0;
+      if (filter === "미진열") return item.abnormalStatus === "미진열";
+      return item.status === filter;
+    }), [storeItems, itemQuery, filter, photos]);
+  const barcodeModalItem = items.find((item) => item.id === barcodeModalItemId);
+  const barcodeModalItems = visibleStoreItems.length ? visibleStoreItems : storeItems;
   useEffect(() => {
     setStoreStatusDraft(selectedStore?.frontPhotoId ? selectedStore.operatingStatus ?? "" : "");
     setStoreStatusMessage("");
@@ -467,6 +487,20 @@ function App() {
   useEffect(() => {
     if (view === "workspace" && workspaceMode === "map" && !canUseStoreMap) setWorkspaceMode("list");
   }, [view, workspaceMode, canUseStoreMap]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(BARCODE_INDEX_URL)
+      .then((response) => response.ok ? response.json() : {})
+      .then((data) => {
+        if (!cancelled) setBarcodeIndex(data as BarcodeImageIndex);
+      })
+      .catch(() => {
+        if (!cancelled) setBarcodeIndex({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   useEffect(() => {
     if (initialLocationRequested.current) return;
     initialLocationRequested.current = true;
@@ -793,6 +827,36 @@ function App() {
     await putItem(saved);
     await refresh(saved.region);
     return true;
+  }
+
+  async function saveListPosPhoto(item: SurveyItem, file: File) {
+    const existing = photos.filter((photo) => photo.itemId === item.id && photo.type === "POS_RECEIPT");
+    await Promise.all(existing.map((photo) => deletePhoto(photo.id)));
+    const resized = await resizePhoto(file);
+    const photo: SurveyPhoto = {
+      id: uid("photo"),
+      region: item.region,
+      itemId: item.id,
+      storeId: item.storeId,
+      type: "POS_RECEIPT",
+      blob: resized.blob,
+      originalName: file.name,
+      mimeType: resized.mimeType,
+      takenAt: now(),
+    };
+    await putPhoto(photo);
+    await refresh(item.region);
+  }
+
+  async function removeListPosPhoto(photo: SurveyPhoto) {
+    await deletePhoto(photo.id);
+    await refresh(photo.region);
+  }
+
+  function moveBarcodeModal(direction: -1 | 1) {
+    const index = barcodeModalItems.findIndex((item) => item.id === barcodeModalItemId);
+    const next = barcodeModalItems[index + direction];
+    if (next) setBarcodeModalItemId(next.id);
   }
 
   async function setStoreOperatingStatus(status: StoreOperatingStatus | "") {
@@ -1291,11 +1355,11 @@ function App() {
           {itemToolsOpen && (
             <section className="tool-panel">
               <Stats stats={summarize(storeItems, photos.filter((photo) => photo.storeId === selectedStore.id))} totalLabel="품목 전체" />
-              <FilterBar filter={filter} setFilter={setFilter} />
+              <FilterBar filter={filter} setFilter={setFilter} values={["전체", "미완료", "완료", "사진누락", "미진열"]} />
             </section>
           )}
           <div className="list">
-            {storeItems.filter((item) => `${item.itemNo} ${item.productName} ${item.barcode} ${item.companyManager} ${item.companyName} ${item.companyTel} ${item.martTel}`.includes(itemQuery)).filter((item) => filter === "전체" || (filter === "미완료" ? item.status !== "완료" : filter === "사진누락" ? requiredPhotoLabels(item, photos.filter((photo) => photo.storeId === item.storeId)).length > 0 : item.status === filter)).map((item) => {
+            {visibleStoreItems.map((item) => {
               const previewPhoto = photos.find((photo) => photo.itemId === item.id && ["PRODUCT_DISPLAY", "PRODUCT_INFO_BARCODE", "POS_RECEIPT"].includes(photo.type));
               const eligibility = getPriceEligibility(item);
               const itemPhotoMissing = item.status === "완료" && requiredPhotoLabels(item, photos.filter((photo) => photo.storeId === item.storeId)).length > 0;
@@ -1310,7 +1374,10 @@ function App() {
                       <dt>조사가격</dt><dd>{item.normalPrice?.toLocaleString() ?? "-"}원 {eligibility && <span className={`eligibility-badge ${eligibility.label === "부적격" ? "bad" : "good"}`} title={eligibility.reason}>{eligibility.label}</span>}</dd>
                     </dl>
                   </div>
-                  <button className="primary" onClick={() => { setSelectedItemId(item.id); setView("item"); }}>입력</button>
+                  <div className="item-card-actions">
+                    <button type="button" onClick={() => setBarcodeModalItemId(item.id)}>바코드</button>
+                    <button className="primary" onClick={() => { setSelectedItemId(item.id); setView("item"); }}>입력</button>
+                  </div>
                 </article>
               );
             })}
@@ -1351,6 +1418,22 @@ function App() {
             </article>
           </section>
         </main>
+      )}
+      {barcodeModalItem && (
+        <BarcodePhotoModal
+          item={barcodeModalItem}
+          barcodeSrc={barcodeImageSrc(barcodeModalItem, barcodeIndex)}
+          posPhoto={photos.find((photo) => photo.itemId === barcodeModalItem.id && photo.type === "POS_RECEIPT")}
+          currentIndex={Math.max(0, barcodeModalItems.findIndex((item) => item.id === barcodeModalItem.id))}
+          totalCount={barcodeModalItems.length}
+          canPrev={barcodeModalItems.findIndex((item) => item.id === barcodeModalItem.id) > 0}
+          canNext={barcodeModalItems.findIndex((item) => item.id === barcodeModalItem.id) < barcodeModalItems.length - 1}
+          onFile={(file) => saveListPosPhoto(barcodeModalItem, file)}
+          onDelete={(photo) => removeListPosPhoto(photo)}
+          onPrev={() => moveBarcodeModal(-1)}
+          onNext={() => moveBarcodeModal(1)}
+          onClose={() => setBarcodeModalItemId("")}
+        />
       )}
       {contactStoreId && (
         <ContactModal
@@ -1467,6 +1550,81 @@ function StorageModal({ estimate, photoCount, onRefresh, onClose }: { estimate?:
         <div className="progress-line storage-progress"><span style={{ width: `${percent}%` }} /></div>
         <p className="small-help">브라우저가 알려준 저장공간 기준입니다. 실제 저장 가능 용량은 기기 여유공간과 브라우저 정책에 따라 달라질 수 있으니 조사 중에는 지역별 백업을 자주 내려받아 주세요.</p>
         <button onClick={onRefresh}>다시 확인</button>
+      </section>
+    </div>
+  );
+}
+
+function BarcodePhotoModal({
+  item,
+  barcodeSrc,
+  posPhoto,
+  currentIndex,
+  totalCount,
+  canPrev,
+  canNext,
+  onFile,
+  onDelete,
+  onPrev,
+  onNext,
+  onClose,
+}: {
+  item: SurveyItem;
+  barcodeSrc: string;
+  posPhoto?: SurveyPhoto;
+  currentIndex: number;
+  totalCount: number;
+  canPrev: boolean;
+  canNext: boolean;
+  onFile: (file: File) => void | Promise<void>;
+  onDelete: (photo: SurveyPhoto) => void | Promise<void>;
+  onPrev: () => void;
+  onNext: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <section className="modal barcode-modal">
+        <div className="modal-head">
+          <div>
+            <h2>바코드 / POS 사진</h2>
+            <p>{totalCount ? `${currentIndex + 1}/${totalCount}` : "1/1"} · {item.itemNo} {item.productName}</p>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="닫기"><X size={18} /></button>
+        </div>
+        <div className="barcode-modal-body">
+          <div className="barcode-info-row">
+            <span>바코드</span>
+            <strong>{item.barcode || "-"}</strong>
+          </div>
+          {barcodeSrc ? (
+            <div className="barcode-image-wrap">
+              <img src={barcodeSrc} alt={`${item.productName} 바코드`} className="barcode-image" loading="lazy" />
+            </div>
+          ) : (
+            <p className="small-help warn">등록된 바코드 이미지가 없습니다.</p>
+          )}
+          <div className={`barcode-pos-box ${posPhoto ? "has-photo" : ""}`}>
+            <div className="photo-slot-head">
+              <div>
+                <strong>POS/영수증사진</strong>
+                <span>미진열 상품의 POS 조회 화면 또는 영수증을 촬영</span>
+              </div>
+            </div>
+            {posPhoto ? (
+              <>
+                <PhotoPreview photo={posPhoto} />
+                <button type="button" className="danger" onClick={() => onDelete(posPhoto)}>지우기</button>
+              </>
+            ) : (
+              <PhotoInput label="촬영/선택" onFile={onFile} />
+            )}
+          </div>
+          <div className="barcode-nav">
+            <button type="button" disabled={!canPrev} onClick={onPrev}>이전</button>
+            <button type="button" disabled={!canNext} onClick={onNext}>다음</button>
+          </div>
+        </div>
       </section>
     </div>
   );

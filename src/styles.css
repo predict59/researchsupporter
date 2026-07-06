@@ -1193,6 +1193,11 @@ textarea { min-height: 110px; resize: vertical; }
   gap: 6px;
   flex-wrap: wrap;
 }
+.item-card-actions {
+  display: grid;
+  grid-template-columns: minmax(0, .72fr) minmax(0, 1fr);
+  gap: 8px;
+}
 .eligibility-badge {
   display: inline-flex;
   align-items: center;
@@ -1505,6 +1510,62 @@ textarea { min-height: 110px; resize: vertical; }
 }
 .storage-progress {
   margin: 8px 0 12px;
+}
+.barcode-modal {
+  width: min(480px, calc(100vw - 24px));
+}
+.barcode-modal-body {
+  display: grid;
+  gap: 12px;
+}
+.barcode-info-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  font-size: 14px;
+}
+.barcode-info-row span {
+  color: #64748b;
+  font-weight: 900;
+}
+.barcode-info-row strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 16px;
+}
+.barcode-image-wrap {
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  padding: 12px;
+  border: 1px solid #dbe1e5;
+  border-radius: 8px;
+  background: #fff;
+}
+.barcode-image {
+  width: 100%;
+  max-height: 150px;
+  object-fit: contain;
+}
+.barcode-pos-box {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px dashed #94a3b8;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.barcode-pos-box.has-photo {
+  border-style: solid;
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+.barcode-nav {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 .bottom-bar {
   position: fixed;
@@ -1906,6 +1967,7 @@ textarea { min-height: 110px; resize: vertical; }
   border: 1px solid #bfdbfe;
 }
 .store-date {
+  grid-column: 3;
   justify-self: end;
   white-space: nowrap;
 }
@@ -2003,7 +2065,8 @@ textarea { min-height: 110px; resize: vertical; }
   z-index: 12;
 }
 .map-active-head .menu-popover {
-  top: 38px;
+  top: auto;
+  bottom: 38px;
   z-index: 40;
 }
 .map-active-stat {
