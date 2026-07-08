@@ -48,6 +48,7 @@ const searchIncludes = (text: string, query: string) => {
   const needle = trimmed.toLowerCase();
   return source.includes(needle) || toChosung(source).includes(needle);
 };
+const nextRecentRegions = (current: string[] | undefined, region: string) => [region, ...(current ?? []).filter((name) => name !== region)].slice(0, 3);
 
 const emptyStats: RegionStats = { total: 0, completed: 0, inProgress: 0, notStarted: 0, photoMissing: 0 };
 const num = (value: string) => {
@@ -511,6 +512,8 @@ function App() {
   const lastExitBackRef = useRef(0);
   const exitToastTimerRef = useRef<number | undefined>();
   const allowBrowserExitRef = useRef(false);
+  const regionCardRefs = useRef(new Map<string, HTMLElement>());
+  const restoreRegionScrollRef = useRef("");
   const [appBackToast, setAppBackToast] = useState("");
 
   const currentRegion = settings.currentRegion;
@@ -925,7 +928,7 @@ function App() {
   }
 
   async function chooseRegion(region: string) {
-    const nextSettings = { ...settings, currentRegion: region };
+    const nextSettings = { ...settings, currentRegion: region, recentRegions: nextRecentRegions(settings.recentRegions, region) };
     setSettingsState(nextSettings);
     setSelectedStoreId("");
     setSelectedItemId("");
@@ -1362,6 +1365,7 @@ function App() {
     }
     else
     if (view === "workspace") {
+      restoreRegionScrollRef.current = currentRegion;
       setStoreQuery("");
       setItemQuery("");
       setView("regions");
@@ -1391,6 +1395,13 @@ function App() {
     window.addEventListener("click", close);
     return () => window.removeEventListener("click", close);
   }, [storeResetMenuOpen]);
+
+  useEffect(() => {
+    if (view !== "regions" || !restoreRegionScrollRef.current) return;
+    const target = restoreRegionScrollRef.current;
+    restoreRegionScrollRef.current = "";
+    window.setTimeout(() => regionCardRefs.current.get(target)?.scrollIntoView({ block: "center" }), 80);
+  }, [view, regions.length, regionQuery]);
 
   useEffect(() => {
     setStoreResetMenuOpen(false);
@@ -1531,11 +1542,13 @@ function App() {
       {view === "regions" && (
         <main className="page">
           <SearchBox value={regionQuery} onChange={setRegionQuery} placeholder="지역명 검색" />
-          {currentRegion && regions.some((region) => region.name === currentRegion) && (
+          {(settings.recentRegions ?? []).some((name) => regions.some((region) => region.name === name)) && (
             <div className="recent-region">
               <div>
                 <span>최근 지역</span>
-                <button onClick={() => chooseRegion(currentRegion)}>{currentRegion}</button>
+                {(settings.recentRegions ?? []).filter((name) => regions.some((region) => region.name === name)).slice(0, 3).map((name) => (
+                  <button key={name} onClick={() => chooseRegion(name)}>{name}</button>
+                ))}
               </div>
               <a className="mini-map-link" target="_blank" href={TARGET_MAP_URL}>전체 지도</a>
             </div>
@@ -1552,7 +1565,7 @@ function App() {
               const hasPartialAssignment = regionStoreIds.size > 0 && assignedStoreIds.size !== regionStoreIds.size;
               const hasDownloadData = hasRegionDownloadData(region.name);
               return (
-                <article className="card region-card" key={region.name}>
+                <article className="card region-card" key={region.name} ref={(node) => { if (node) regionCardRefs.current.set(region.name, node); else regionCardRefs.current.delete(region.name); }}>
                   <div className="region-card-head">
                     <h2>{region.name}</h2>
                     <details className="card-menu subtle-menu">
@@ -2219,6 +2232,7 @@ function StoreCard({
       <div className="card-head">
         <div>
           <h2 className="store-card-title" title={store.storeName}><span className="store-name-text">{store.storeName}</span><span className={`operating-badge small ${displayOperatingStatus === "미확인" ? "unknown" : operatingClass(displayOperatingStatus as StoreOperatingStatus)}`}>{displayOperatingStatus}</span></h2>
+          {distanceText && <span className="store-distance">현재 위치 {distanceText}</span>}
           <p>{store.storeAddress || "주소 없음"}</p>
         </div>
         <StoreMoreMenu store={store} onAssignToggle={onAssignToggle} onMapView={onMapView} />
@@ -2232,8 +2246,9 @@ function StoreCard({
         <div className="progress-line"><span style={{ width: `${percent}%` }} /></div>
       </div>
       <div className="store-meta">
-        <span className={`store-distance ${distanceText ? "" : "empty"}`}>{distanceText ? `현재 위치 ${distanceText}` : "현재 위치 -"}</span>
-        {stats.photoMissing > 0 && <span className="store-missing">사진 누락 {stats.photoMissing.toLocaleString()}건</span>}
+        <div className="store-meta-badges">
+          {stats.photoMissing > 0 && <span className="store-missing">사진 누락 {stats.photoMissing.toLocaleString()}건</span>}
+        </div>
         <span className="store-date">조사일: {latestSurveyDate}</span>
       </div>
       <div className="card-actions">

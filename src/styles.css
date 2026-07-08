@@ -296,6 +296,7 @@ textarea { min-height: 110px; resize: vertical; }
   min-width: 0;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .recent-region button {
@@ -1895,13 +1896,21 @@ textarea { min-height: 110px; resize: vertical; }
 }
 .store-meta {
   display: grid;
-  grid-template-columns: auto auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 6px;
   align-items: center;
   margin: 0 0 9px;
   color: #52616b;
   font-size: 12px;
   font-weight: 800;
+}
+.store-meta-badges {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 .store-photo-badge,
 .store-missing,
@@ -1925,15 +1934,15 @@ textarea { min-height: 110px; resize: vertical; }
   border: 1px solid #fecaca;
 }
 .store-distance {
+  display: inline-flex;
+  width: fit-content;
+  margin: 6px 0 2px;
   border-radius: 999px;
   padding: 4px 8px;
   background: #ecfeff;
   color: #0e7490;
   font-size: 12px;
   font-weight: 900;
-}
-.store-distance.empty {
-  visibility: hidden;
 }
 .map-excluded-badge {
   display: inline-flex;
@@ -2075,7 +2084,6 @@ textarea { min-height: 110px; resize: vertical; }
   border: 1px solid #bfdbfe;
 }
 .store-date {
-  grid-column: 3;
   justify-self: end;
   white-space: nowrap;
 }

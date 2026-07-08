@@ -93,6 +93,7 @@ export type SurveyPhoto = {
 
 export type AppSettings = {
   currentRegion?: string;
+  recentRegions?: string[];
   lastOpenedStoreId?: string;
   lastOpenedItemId?: string;
   defaultSurveyDate: string;

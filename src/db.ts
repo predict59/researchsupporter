@@ -1,7 +1,7 @@
 import { openDB } from "idb";
 import type { AppSettings, Region, SurveyFileRecord, SurveyItem, SurveyPhoto, SurveyStore } from "./types";
 
-const DB_NAME = "mw-price-survey-pwa";
+const DB_NAME = "research-supporter-v2";
 const DB_VERSION = 1;
 
 export const today = () => new Date().toISOString().slice(0, 10);
