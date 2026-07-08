@@ -131,27 +131,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 }
 .top-actions button { width: 100%; justify-content: flex-start; border: 0; }
 .top-actions button:hover { background: #eef2f4; }
-.menu-check {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 8px;
-  align-items: center;
-  padding: 9px 10px 4px;
-  margin: 2px 0 0;
-  border-top: 1px solid #e5ebef;
-  color: #52616b;
-  font-size: 13px;
-  font-weight: 800;
-}
-.menu-check input {
-  width: 18px;
-  min-height: 18px;
-  accent-color: #0f766e;
-}
-.menu-check span {
-  min-width: 0;
-  line-height: 1.35;
-}
 .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .current { display: none; color: #52616b; font-size: 13px; font-weight: 800; white-space: nowrap; max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
 .boot-screen {
