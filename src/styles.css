@@ -1141,26 +1141,53 @@ textarea { min-height: 110px; resize: vertical; }
   width: 100%;
   min-height: 42px;
   border: 2px dashed #94a3b8;
+  border-radius: 8px;
   background: #f8fafc;
-  font-weight: 900;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 .reset-store-button,
 .reset-panel .danger {
   width: 100%;
   min-height: 44px;
 }
-.empty-assignment {
-  text-align: center;
-  padding: 24px 18px;
-}
-.empty-assignment strong {
-  display: block;
-  font-size: 18px;
-  margin-bottom: 8px;
-}
-.empty-assignment p {
+.empty-assignment-note {
   color: #64748b;
-  margin: 0 0 16px;
+  font-size: 14px;
+  line-height: 1.55;
+  padding: 12px 2px 18px;
+}
+.inline-kebab {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  color: #17202a;
+  vertical-align: middle;
+  margin: 0 2px;
+}
+.store-title-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+}
+.store-title-row h1 {
+  min-width: 0;
+  margin: 0;
+}
+.store-reset-menu .menu-popover {
+  top: 38px;
+}
+.menu-popover .danger-menu-item {
+  color: #b91c1c;
+  font-weight: 800;
 }
 .store-date-row {
   display: grid;
@@ -2159,10 +2186,13 @@ textarea { min-height: 110px; resize: vertical; }
   background: rgba(15, 23, 42, .38);
   display: grid;
   place-items: center;
-  padding: 12px;
+  padding: 14px;
+  overflow-x: hidden;
 }
 .modal {
-  width: min(620px, calc(100vw - 24px));
+  width: min(620px, calc(100vw - 36px));
+  max-width: calc(100vw - 36px);
+  box-sizing: border-box;
   max-height: min(760px, calc(100dvh - 24px));
   overflow: auto;
   background: #fff;
@@ -2182,7 +2212,7 @@ textarea { min-height: 110px; resize: vertical; }
 .modal .panel { border: 0; padding: 0; margin: 0; }
 .icon-button { width: 42px; padding: 0; }
 .front-photo-picker-modal {
-  width: min(760px, calc(100vw - 24px));
+  width: min(760px, calc(100vw - 36px));
 }
 .front-photo-grid {
   display: grid;

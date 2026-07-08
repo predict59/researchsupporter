@@ -68,17 +68,6 @@ function resetItemInput(item: SurveyItem): SurveyItem {
     updatedAt: now(),
   };
 }
-function hasItemInput(item: SurveyItem) {
-  return item.status !== "미조사"
-    || Boolean(item.surveyDate)
-    || Boolean(item.normalDisplay)
-    || item.normalPrice !== null
-    || item.discountPrice !== null
-    || Boolean(item.memo)
-    || Boolean(item.barcodeRegistered)
-    || Boolean(item.abnormalStatus)
-    || Boolean(item.posChecked);
-}
 const PHOTO_MAX_EDGE = 1280;
 const PHOTO_TARGET_BYTES = 950 * 1024;
 const PHOTO_MIN_EDGE = 760;
@@ -458,6 +447,7 @@ function App() {
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
   const [storeStatusDraft, setStoreStatusDraft] = useState<StoreOperatingStatus | "">("");
   const [storeStatusMessage, setStoreStatusMessage] = useState("");
+  const [storeResetMenuOpen, setStoreResetMenuOpen] = useState(false);
   const confirmResolver = useRef<((value: boolean) => void) | null>(null);
   const locatePromiseRef = useRef<Promise<{ latitude: number; longitude: number } | null> | null>(null);
   const initialLocationRequested = useRef(false);
@@ -1216,11 +1206,19 @@ function App() {
 
   async function doExportExcel(region = currentRegion) {
     if (!region) return;
+    if (!items.some((item) => item.region === region && item.status === "완료")) {
+      alert("입력된 조사 정보가 없어 내려받을 수 없습니다.");
+      return;
+    }
     await exportRegionExcel(region, items.filter((item) => item.region === region));
   }
 
   async function doExportZip(region = currentRegion) {
     if (!region) return;
+    if (!items.some((item) => item.region === region && item.status === "완료")) {
+      alert("입력된 조사 정보가 없어 내려받을 수 없습니다.");
+      return;
+    }
     const regionStoresForExport = stores.filter((store) => store.region === region);
     const regionItemsForExport = items.filter((item) => item.region === region);
     const regionPhotos = region === currentRegion ? photos : await getPhotosByRegion(region);
@@ -1315,6 +1313,18 @@ function App() {
       setView("upload");
     }
   };
+
+  useEffect(() => {
+    if (!storeResetMenuOpen) return;
+    const close = () => setStoreResetMenuOpen(false);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, [storeResetMenuOpen]);
+
+  useEffect(() => {
+    setStoreResetMenuOpen(false);
+  }, [view, selectedStoreId]);
+
   useEffect(() => {
     const onPopState = (event: PopStateEvent) => {
       if (allowBrowserExitRef.current) return;
@@ -1469,8 +1479,7 @@ function App() {
               const allItemStats = summarize(items.filter((item) => item.region === region.name), regionPhotos);
               const assignedItemStats = summarize(items.filter((item) => item.region === region.name && assignedStoreIds.has(item.storeId)), regionPhotos);
               const hasPartialAssignment = regionStoreIds.size > 0 && assignedStoreIds.size !== regionStoreIds.size;
-              const hasDownloadData = items.some((item) => item.region === region.name && hasItemInput(item))
-                || stores.some((store) => store.region === region.name && (store.frontPhotoId || store.operatingStatus));
+              const hasDownloadData = items.some((item) => item.region === region.name && item.status === "완료");
               return (
                 <article className="card region-card" key={region.name}>
                   <div className="region-card-head">
@@ -1535,11 +1544,9 @@ function App() {
           )}
           {workspaceMode === "list" && (
           assignedRegionStores.length === 0 ? (
-            <section className="panel empty-assignment">
-              <strong>담당매장이 선택되지 않았습니다.</strong>
-              <p>메인에서 해당 지역 카드의 점세개 메뉴를 눌러 담당매장을 추가해 주세요.</p>
-              <button type="button" className="primary" onClick={() => openAssignment(currentRegion)}>담당매장 관리</button>
-            </section>
+            <div className="empty-assignment-note">
+              담당매장이 선택되지 않았습니다. 메인페이지에서 지역별로 <span className="inline-kebab" aria-label="케밥 메뉴"><MoreVertical size={14} /></span>를 눌러 담당매장을 추가하세요.
+            </div>
           ) : (
           <div className="list">
             {assignedVisibleRegionStores.map((store) => {
@@ -1602,7 +1609,17 @@ function App() {
       {view === "store" && selectedStore && (
         <main className="page narrow">
           <section className="panel">
-            <h1>{selectedStore.storeName}</h1>
+            <div className="store-title-row">
+              <h1>{selectedStore.storeName}</h1>
+              <div className={`card-menu store-reset-menu ${storeResetMenuOpen ? "open" : ""}`} onClick={(event) => event.stopPropagation()}>
+                <button type="button" className="card-menu-trigger" aria-label="매장 메뉴" onClick={() => setStoreResetMenuOpen((value) => !value)}><MoreVertical size={18} /></button>
+                {storeResetMenuOpen && (
+                  <div className="menu-popover">
+                    <button type="button" className="danger-menu-item" onClick={() => { setStoreResetMenuOpen(false); resetSelectedStoreAll(); }}>매장 정보 초기화</button>
+                  </div>
+                )}
+              </div>
+            </div>
             <div className="store-address"><span>주소</span><strong>{selectedStore.storeAddress || "-"}</strong></div>
             <div className="store-address store-photo-heading"><span>매장 전경사진</span></div>
             {(() => {
@@ -1614,7 +1631,7 @@ function App() {
                 {!selectedStore.frontPhotoId && <PhotoInput label="" pickLabel="갤러리 선택" onFile={saveStorePhoto} />}
                 {selectedStore.frontPhotoId && <button className="danger" onClick={removeStorePhoto}>지우기</button>}
               </div>
-              <button type="button" className="store-front-reuse" onClick={() => setFrontPhotoPickerOpen(true)}>기존 전경 사진 사용</button>
+              <button type="button" className="store-front-reuse" onClick={() => setFrontPhotoPickerOpen(true)}><Upload size={18} />기존 전경 사진 사용</button>
             </div>
               );
             })()}
@@ -1643,7 +1660,6 @@ function App() {
             <p>조사 품목: {storeItems.length.toLocaleString()}건</p>
             <label className="store-date-row"><span>방문 조사일</span><input type="date" value={selectedStore.surveyDate} onChange={async (event) => { await putStore({ ...selectedStore, surveyDate: event.target.value, updatedAt: now() }); await refresh(selectedStore.region); }} /></label>
             <button className="primary sticky-lite" onClick={() => selectedStore.frontPhotoId && selectedStore.operatingStatus ? (setItemQuery(""), setView("items")) : alert(selectedStore.frontPhotoId ? "매장 상태를 먼저 설정해 주세요." : "매장 전경사진을 먼저 촬영/선택해 주세요.")}>조사 입력</button>
-            <button type="button" className="danger reset-store-button" onClick={resetSelectedStoreAll}>매장 정보 초기화</button>
           </section>
         </main>
       )}
@@ -2645,7 +2661,7 @@ function ItemEditor({ item, storeItems, storeOperatingStatus, photos, fromBarcod
   };
   const discountChoice = draft.hasDiscount === null ? "" : draft.hasDiscount ? (draft.memo.includes("1+1 행사") ? "묶음할인(1+1, 50%)" : "단품할인") : "할인 없음";
   const updateDiscountChoice = (value: string) => {
-    const cleanBundleMemo = removeMemoTexts(draft.memo, ["1+1 행사"]);
+    const cleanDiscountChoiceMemo = removeMemoTexts(draft.memo, ["1+1 행사", "단품할인"]);
     if (value === "할인 없음" || value === "") {
       update({
         hasDiscount: value === "" ? null : false,
@@ -2655,7 +2671,7 @@ function ItemEditor({ item, storeItems, storeOperatingStatus, photos, fromBarcod
         discountType: "",
         discountOral: false,
         discountPeriodMode: "",
-        memo: removeMemoTexts(draft.memo, ["1+1 행사", "상시할인", "할인 정보 확인 불가", "구두확인"]),
+        memo: removeMemoTexts(draft.memo, ["1+1 행사", "단품할인", "상시할인", "할인 정보 확인 불가", "구두확인"]),
       });
       return;
     }
@@ -2663,14 +2679,14 @@ function ItemEditor({ item, storeItems, storeOperatingStatus, photos, fromBarcod
       update({
         hasDiscount: true,
         discountPrice: draft.normalPrice !== null ? Math.round(draft.normalPrice / 2) : draft.discountPrice,
-        memo: appendMemoText(cleanBundleMemo, "1+1 행사"),
+        memo: appendMemoText(cleanDiscountChoiceMemo, "1+1 행사"),
       });
       return;
     }
     update({
       hasDiscount: true,
       discountPrice: draft.memo.includes("1+1 행사") ? null : draft.discountPrice,
-      memo: cleanBundleMemo,
+      memo: appendMemoText(cleanDiscountChoiceMemo, "단품할인"),
     });
   };
   const updateDiscountMode = (mode: NonNullable<SurveyItem["discountPeriodMode"]>) => {
