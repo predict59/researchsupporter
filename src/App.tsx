@@ -68,6 +68,21 @@ function resetItemInput(item: SurveyItem): SurveyItem {
     updatedAt: now(),
   };
 }
+function hasItemSurveyInput(item: SurveyItem) {
+  return item.status !== "미조사"
+    || Boolean(item.normalDisplay)
+    || item.normalPrice !== null
+    || item.hasDiscount !== null
+    || item.discountPrice !== null
+    || Boolean(item.discountStartDate)
+    || Boolean(item.discountEndDate)
+    || Boolean(item.discountType)
+    || Boolean(item.memo)
+    || Boolean(item.barcodeRegistered)
+    || Boolean(item.abnormalStatus)
+    || Boolean(item.posChecked)
+    || Boolean(item.abnormalDisplay);
+}
 const PHOTO_MAX_EDGE = 1280;
 const PHOTO_TARGET_BYTES = 950 * 1024;
 const PHOTO_MIN_EDGE = 760;
@@ -547,9 +562,9 @@ function App() {
   const barcodeModalItem = items.find((item) => item.id === barcodeModalItemId);
   const barcodeModalItems = visibleStoreItems.length ? visibleStoreItems : storeItems;
   useEffect(() => {
-    setStoreStatusDraft(selectedStore?.frontPhotoId ? selectedStore.operatingStatus ?? "" : "");
+    setStoreStatusDraft(selectedStore?.operatingStatus ?? "");
     setStoreStatusMessage("");
-  }, [selectedStore?.id, selectedStore?.frontPhotoId, selectedStore?.operatingStatus]);
+  }, [selectedStore?.id, selectedStore?.operatingStatus]);
   useEffect(() => {
     if (view === "workspace" && workspaceMode === "map" && !canUseStoreMap) setWorkspaceMode("list");
   }, [view, workspaceMode, canUseStoreMap]);
@@ -964,7 +979,7 @@ function App() {
     if (selectedStore.frontPhotoId) await deletePhoto(selectedStore.frontPhotoId);
     const resized = await resizePhoto(file);
     const photo: SurveyPhoto = { id: uid("photo"), region: selectedStore.region, storeId: selectedStore.id, type: "STORE_FRONT", blob: resized.blob, originalName: file.name, mimeType: resized.mimeType, takenAt: now() };
-    const nextStore = { ...selectedStore, frontPhotoId: photo.id, operatingStatus: selectedStore.frontPhotoId ? selectedStore.operatingStatus : undefined, status: "진행중" as const, startedAt: selectedStore.startedAt ?? now(), updatedAt: now() };
+    const nextStore = { ...selectedStore, frontPhotoId: photo.id, operatingStatus: selectedStore.operatingStatus, status: "진행중" as const, startedAt: selectedStore.startedAt ?? now(), updatedAt: now() };
     await putPhoto(photo);
     await putStore(nextStore);
     await refresh(selectedStore.region);
@@ -991,7 +1006,7 @@ function App() {
     const nextStore = {
       ...selectedStore,
       frontPhotoId: photo.id,
-      operatingStatus: selectedStore.frontPhotoId ? selectedStore.operatingStatus : undefined,
+      operatingStatus: selectedStore.operatingStatus,
       status: "진행중" as const,
       startedAt: selectedStore.startedAt ?? now(),
       updatedAt: now(),
@@ -1005,7 +1020,7 @@ function App() {
   async function removeStorePhoto() {
     if (!selectedStore?.frontPhotoId) return;
     await deletePhoto(selectedStore.frontPhotoId);
-    await putStore({ ...selectedStore, frontPhotoId: undefined, operatingStatus: undefined, updatedAt: now() });
+    await putStore({ ...selectedStore, frontPhotoId: undefined, updatedAt: now() });
     await refresh(selectedStore.region);
   }
 
@@ -1054,16 +1069,6 @@ function App() {
 
   async function setStoreOperatingStatus(status: StoreOperatingStatus | "") {
     if (!selectedStore) return;
-    if (!selectedStore.frontPhotoId) {
-      await askConfirm({
-        title: "매장 전경사진이 필요합니다",
-        message: "매장 상태는 전경사진을 먼저 등록한 뒤 전환할 수 있습니다.",
-        confirmText: "확인",
-        cancelText: "닫기",
-      });
-      setStoreStatusDraft("");
-      return;
-    }
     if (!status) {
       await putStore({ ...selectedStore, operatingStatus: undefined, updatedAt: now() });
       await refresh(selectedStore.region);
@@ -1204,9 +1209,14 @@ function App() {
     await refresh(selectedStore.region);
   }
 
+  function hasRegionDownloadData(region: string) {
+    return stores.some((store) => store.region === region && Boolean(store.frontPhotoId))
+      || items.some((item) => item.region === region && hasItemSurveyInput(item));
+  }
+
   async function doExportExcel(region = currentRegion) {
     if (!region) return;
-    if (!items.some((item) => item.region === region && item.status === "완료")) {
+    if (!hasRegionDownloadData(region)) {
       alert("입력된 조사 정보가 없어 내려받을 수 없습니다.");
       return;
     }
@@ -1215,7 +1225,7 @@ function App() {
 
   async function doExportZip(region = currentRegion) {
     if (!region) return;
-    if (!items.some((item) => item.region === region && item.status === "완료")) {
+    if (!hasRegionDownloadData(region)) {
       alert("입력된 조사 정보가 없어 내려받을 수 없습니다.");
       return;
     }
@@ -1479,7 +1489,7 @@ function App() {
               const allItemStats = summarize(items.filter((item) => item.region === region.name), regionPhotos);
               const assignedItemStats = summarize(items.filter((item) => item.region === region.name && assignedStoreIds.has(item.storeId)), regionPhotos);
               const hasPartialAssignment = regionStoreIds.size > 0 && assignedStoreIds.size !== regionStoreIds.size;
-              const hasDownloadData = items.some((item) => item.region === region.name && item.status === "완료");
+              const hasDownloadData = hasRegionDownloadData(region.name);
               return (
                 <article className="card region-card" key={region.name}>
                   <div className="region-card-head">
@@ -1640,26 +1650,25 @@ function App() {
             <h2>상태</h2>
             <div className="store-operating">
               <span>현재 매장 상태</span>
-              <strong className={`operating-badge ${selectedStore.frontPhotoId && selectedStore.operatingStatus ? operatingClass(selectedStore.operatingStatus) : "unknown"}`}>{storeDisplayStatus(selectedStore)}</strong>
+              <strong className={`operating-badge ${selectedStore.operatingStatus ? operatingClass(selectedStore.operatingStatus) : "unknown"}`}>{storeDisplayStatus(selectedStore)}</strong>
             </div>
             <div className="store-state-actions">
-              <select disabled={!selectedStore.frontPhotoId} value={selectedStore.frontPhotoId ? storeStatusDraft : ""} onChange={(event) => setStoreStatusDraft(event.target.value as StoreOperatingStatus | "")}>
+              <select value={storeStatusDraft} onChange={(event) => setStoreStatusDraft(event.target.value as StoreOperatingStatus | "")}>
                 <option value="">미확인</option>
                 <option value="영업 중">영업 중</option>
                 <option value="폐업">폐업</option>
                 <option value="임시휴업">임시휴업</option>
               </select>
-              <button type="button" className="primary" disabled={!selectedStore.frontPhotoId} onClick={() => setStoreOperatingStatus(storeStatusDraft)}>저장</button>
+              <button type="button" className="primary" onClick={() => setStoreOperatingStatus(storeStatusDraft)}>저장</button>
             </div>
-            {!selectedStore.frontPhotoId && <p className="small-help warn">매장 전경사진을 먼저 등록해야 상태를 전환할 수 있습니다.</p>}
-            {selectedStore.frontPhotoId && !selectedStore.operatingStatus && <p className="small-help warn">조사 입력 전 매장 상태를 영업 중, 폐업, 임시휴업 중 하나로 설정해 주세요.</p>}
+            {!selectedStore.operatingStatus && <p className="small-help warn">조사 입력 전 매장 상태를 영업 중, 폐업, 임시휴업 중 하나로 설정해 주세요.</p>}
             {storeStatusMessage && <p className="ok store-status-message">{storeStatusMessage}</p>}
           </section>
           <Contacts items={storeItems} />
           <section className="panel">
             <p>조사 품목: {storeItems.length.toLocaleString()}건</p>
             <label className="store-date-row"><span>방문 조사일</span><input type="date" value={selectedStore.surveyDate} onChange={async (event) => { await putStore({ ...selectedStore, surveyDate: event.target.value, updatedAt: now() }); await refresh(selectedStore.region); }} /></label>
-            <button className="primary sticky-lite" onClick={() => selectedStore.frontPhotoId && selectedStore.operatingStatus ? (setItemQuery(""), setView("items")) : alert(selectedStore.frontPhotoId ? "매장 상태를 먼저 설정해 주세요." : "매장 전경사진을 먼저 촬영/선택해 주세요.")}>조사 입력</button>
+            <button className="primary sticky-lite" onClick={() => selectedStore.operatingStatus ? (setItemQuery(""), setView("items")) : alert("매장 상태를 먼저 설정해 주세요.")}>조사 입력</button>
           </section>
         </main>
       )}
@@ -2011,19 +2020,21 @@ function Stats({ stats, totalLabel = "전체" }: { stats: RegionStats; totalLabe
 function RegionSummary({ stats, itemStats, assignedStats, assignedItemStats }: { stats: RegionStats; itemStats: RegionStats; assignedStats?: RegionStats; assignedItemStats?: RegionStats }) {
   const storePercent = stats.total ? Math.round((stats.completed / stats.total) * 100) : 0;
   const itemPercent = itemStats.total ? Math.round((itemStats.completed / itemStats.total) * 100) : 0;
+  const assignedStoreProgress = assignedStats ?? emptyStats;
+  const assignedItemProgress = assignedItemStats ?? emptyStats;
   return (
     <div className="region-summary">
       <div className="region-metric">
         <span>매장</span>
         <strong>{stats.completed.toLocaleString()}<small>/{stats.total.toLocaleString()}</small></strong>
         <div className="mini-progress"><i style={{ width: `${storePercent}%` }} /></div>
-        {assignedStats ? <em className="assigned-progress">담당 {assignedStats.completed.toLocaleString()}/{assignedStats.total.toLocaleString()}</em> : <em>미조사 {stats.notStarted.toLocaleString()}</em>}
+        <em className="assigned-progress">담당 {assignedStoreProgress.completed.toLocaleString()}/{assignedStoreProgress.total.toLocaleString()}</em>
       </div>
       <div className="region-metric">
         <span>품목</span>
         <strong>{itemStats.completed.toLocaleString()}<small>/{itemStats.total.toLocaleString()}</small></strong>
         <div className="mini-progress"><i style={{ width: `${itemPercent}%` }} /></div>
-        {assignedItemStats ? <em className="assigned-progress">담당 {assignedItemStats.completed.toLocaleString()}/{assignedItemStats.total.toLocaleString()}</em> : <em>미조사 {itemStats.notStarted.toLocaleString()}</em>}
+        <em className="assigned-progress">담당 {assignedItemProgress.completed.toLocaleString()}/{assignedItemProgress.total.toLocaleString()}</em>
       </div>
     </div>
   );
@@ -2058,7 +2069,7 @@ function operatingClass(status?: StoreOperatingStatus) {
 }
 
 function storeDisplayStatus(store: SurveyStore) {
-  return store.frontPhotoId ? store.operatingStatus ?? "미확인" : "미확인";
+  return store.operatingStatus ?? "미확인";
 }
 
 function hasStoreCoordinates(store: SurveyStore) {
