@@ -1701,7 +1701,7 @@ function App() {
               <div className="photo-actions store-front-actions">
                 {!selectedStore.frontPhotoId && <PhotoInput label="" pickLabel="갤러리 선택" onFile={saveStorePhoto} />}
                 {frontPhoto && <button className="danger" onClick={removeStorePhoto}>지우기</button>}
-                {frontPhoto && <button type="button" onClick={() => downloadPhotoBlob(frontPhoto.blob, `${selectedStore.storeName}_매장전경`, photoExt(frontPhoto))}>사진다운로드</button>}
+                {frontPhoto && <button type="button" onClick={() => downloadPhotoBlob(frontPhoto.blob, `${storeItems[0]?.itemNo ?? selectedStore.storeName}.1`, photoExt(frontPhoto))}>사진다운로드</button>}
               </div>
               {!frontPhoto && <button type="button" className="store-front-reuse" onClick={() => setFrontPhotoPickerOpen(true)}><Upload size={18} />기존 전경 사진 사용</button>}
             </div>
@@ -1712,7 +1712,7 @@ function App() {
             <section className="panel store-status-panel">
               <h2>상태</h2>
               <div className="store-operating">
-                <span>현재 매장 상태</span>
+                <span>구분</span>
                 <strong className={`operating-badge ${selectedStore.operatingStatus ? operatingClass(selectedStore.operatingStatus) : "unknown"}`}>{storeDisplayStatus(selectedStore)}</strong>
               </div>
               <div className="store-state-actions">
@@ -1730,7 +1730,7 @@ function App() {
             <section className="panel store-survey-panel">
               <h2>조사 입력</h2>
               <p>조사 품목: {storeItems.length.toLocaleString()}건</p>
-              <label className="store-date-row"><span>방문 조사일</span><input type="date" value={selectedStore.surveyDate} onChange={async (event) => { await putStore({ ...selectedStore, surveyDate: event.target.value, updatedAt: now() }); await refresh(selectedStore.region); }} /></label>
+              <label className="store-date-row"><input type="date" value={selectedStore.surveyDate} onChange={async (event) => { await putStore({ ...selectedStore, surveyDate: event.target.value, updatedAt: now() }); await refresh(selectedStore.region); }} /></label>
               <button className="primary sticky-lite" onClick={() => selectedStore.operatingStatus ? (setItemQuery(""), setView("items")) : alert("매장 상태를 먼저 설정해 주세요.")}>조사 입력</button>
             </section>
           </div>
@@ -2913,10 +2913,11 @@ function ItemEditor({ item, storeItems, storeOperatingStatus, photos, fromBarcod
       return;
     }
     targets.forEach(({ photo, label }, index) => {
-      window.setTimeout(() => downloadPhotoBlob(photo.blob, `${draft.itemNo}_${label}`, photoExt(photo)), index * 250);
+      const suffix = label === "제품진열사진" ? "2" : label === "제품정보사진" ? "3" : "4";
+      window.setTimeout(() => downloadPhotoBlob(photo.blob, `${draft.itemNo}.${suffix}`, photoExt(photo)), index * 250);
     });
   };
-  return <main className="page item-page"><section className="item-hero"><div className="item-hero-row"><span className="item-code">{draft.itemNo}</span><strong className="item-hero-name" title={draft.productName}>{draft.productName}</strong><Badge text={draft.status} /></div></section>
+  return <main className="page item-page"><section className="item-hero"><div className="item-hero-row"><span className="item-code">{draft.itemNo}</span><strong className="item-hero-name" title={draft.productName}>{draft.productName}</strong><a className="image-search-button" href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(draft.productName)}`} target="_blank" aria-label={`${draft.productName} 이미지 검색`}><Search size={15} /></a><Badge text={draft.status} /></div></section>
     <ItemContact item={draft} />
     <details className="panel" open><summary>① 국군복지단 제시정보</summary><Info item={draft} /></details>
     <section className="panel"><h2>② 실물 확인</h2><Choice label="진열여부" note="*조사표에는 정상진열로 표기" value={draft.normalDisplay} values={["O", "X"]} onChange={updateNormalDisplay} /><Choice label="규격일치" disabled={draft.normalDisplay !== "O"} value={draft.normalDisplay === "O" ? draft.specMatch : ""} values={["O", "X"]} onChange={(value) => update({ specMatch: value as SurveyItem["specMatch"] })} /><Choice label="바코드일치" disabled={draft.normalDisplay !== "O"} value={draft.normalDisplay === "O" ? draft.barcodeMatch : ""} values={["O", "X"]} onChange={(value) => update({ barcodeMatch: value as SurveyItem["barcodeMatch"] })} /></section>

@@ -1212,10 +1212,7 @@ textarea { min-height: 110px; resize: vertical; }
   font-weight: 800;
 }
 .store-date-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
+  display: block;
   margin-bottom: 14px;
 }
 .store-date-row span {
@@ -1227,6 +1224,9 @@ textarea { min-height: 110px; resize: vertical; }
 .store-date-row input {
   width: 100%;
   min-width: 0;
+  font-size: 13px;
+  padding-left: 10px;
+  padding-right: 10px;
 }
 .store-info-grid {
   display: grid;
@@ -2210,9 +2210,10 @@ textarea { min-height: 110px; resize: vertical; }
 .full-button { width: 100%; }
 .card-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
+.card-actions button:first-child { grid-column: 1 / -1; }
 .card-actions button { width: 100%; }
 .modal-backdrop {
   position: fixed;
@@ -2376,7 +2377,7 @@ textarea { min-height: 110px; resize: vertical; }
   .region-actions { grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .page-head { align-items: stretch; flex-direction: column; }
   .bottom-bar button { flex: 1 1 120px; }
-  .card-actions { grid-template-columns: 1fr; }
+  .card-actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .item-contact { grid-template-columns: 1fr; }
   .item-contact a { justify-content: center; }
   .photo-actions { grid-template-columns: 1fr; }
