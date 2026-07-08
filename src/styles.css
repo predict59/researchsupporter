@@ -672,6 +672,30 @@ textarea { min-height: 110px; resize: vertical; }
   font-size: 13px;
   font-weight: 800;
 }
+.summary-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+.summary-detail-grid div {
+  border: 1px solid #dbe1e5;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 10px;
+}
+.summary-detail-grid span {
+  display: block;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 900;
+  margin-bottom: 4px;
+}
+.summary-detail-grid strong {
+  color: #17202a;
+  font-size: 22px;
+  line-height: 1;
+}
 .confirm-dialog {
   width: min(420px, calc(100vw - 32px));
   text-align: left;

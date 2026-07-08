@@ -1763,7 +1763,6 @@ function App() {
           </div>
           {itemToolsOpen && (
             <section className="tool-panel">
-              <Stats stats={summarize(storeItems, photos.filter((photo) => photo.storeId === selectedStore.id))} totalLabel="품목 전체" />
               <div className="store-filter-sort-row">
                 <FilterBar filter={filter} setFilter={setFilter} values={["전체", "미완료", "완료", "사진누락", "미진열", "비정상진열"]} />
                 <label className="sort-control sort-only">
@@ -1905,6 +1904,7 @@ function App() {
           storeCount={1}
           completedStoreCount={storeItems.every((item) => item.status === "완료") ? 1 : 0}
           mode="items"
+          itemDetailStats={itemDetailSummary(storeItems, photosByStore.get(selectedStore.id) ?? [])}
           onClose={() => setSummaryOpen(false)}
         />
       )}
@@ -1915,6 +1915,7 @@ function App() {
           storeCount={1}
           completedStoreCount={storeItems.length > 0 && storeItems.every((item) => item.status === "완료") ? 1 : 0}
           mode="items"
+          itemDetailStats={itemDetailSummary(storeItems, photosByStore.get(selectedStore.id) ?? [])}
           onClose={() => setSummaryOpen(false)}
         />
       )}
@@ -1925,6 +1926,7 @@ function App() {
           storeCount={1}
           completedStoreCount={storeItems.length > 0 && storeItems.every((item) => item.status === "완료") ? 1 : 0}
           mode="items"
+          itemDetailStats={itemDetailSummary(storeItems, photosByStore.get(selectedStore.id) ?? [])}
           onClose={() => setSummaryOpen(false)}
         />
       )}
@@ -2090,19 +2092,13 @@ function FilterBar({ filter, setFilter, values = ["전체", "미완료", "미조
   return <div className="segmented filter-chips">{values.map((value) => <button className={filter === value ? "active" : ""} key={value} onClick={() => setFilter(value)}>{value}</button>)}</div>;
 }
 
-function Stats({ stats, totalLabel = "전체" }: { stats: RegionStats; totalLabel?: string }) {
-  return (
-    <div className="stats">
-      <div className="stats-line">
-        <strong>{totalLabel} {stats.total.toLocaleString()}개</strong>
-        <span>완료 {stats.completed.toLocaleString()}</span>
-        <span>조사중 {stats.inProgress.toLocaleString()}</span>
-        <span>미조사 {stats.notStarted.toLocaleString()}</span>
-      </div>
-      <div className="stats-progress"><span style={{ width: `${stats.total ? Math.round((stats.completed / stats.total) * 100) : 0}%` }} /></div>
-      <div className={stats.photoMissing > 0 ? "stats-missing" : "stats-photo-ok"}>{stats.photoMissing > 0 ? `사진누락 ${stats.photoMissing.toLocaleString()}개` : "사진"}</div>
-    </div>
-  );
+function itemDetailSummary(items: SurveyItem[], photos: SurveyPhoto[]) {
+  return {
+    notDisplayed: items.filter((item) => item.abnormalStatus === "미진열").length,
+    photoMissing: items.filter((item) => item.status === "완료" && requiredPhotoLabels(item, photos).length > 0).length,
+    abnormalDisplay: items.filter((item) => item.abnormalDisplay === "O").length,
+    notSold: items.filter((item) => item.abnormalStatus === "미판매").length,
+  };
 }
 
 function RegionSummary({ stats, itemStats, assignedStats, assignedItemStats }: { stats: RegionStats; itemStats: RegionStats; assignedStats?: RegionStats; assignedItemStats?: RegionStats }) {
@@ -2518,7 +2514,7 @@ function ContactModal({ store, items, onClose }: { store?: SurveyStore; items: S
   );
 }
 
-function SummaryModal({ region, stats, storeCount, completedStoreCount, mode, onClose }: { region?: string; stats: RegionStats; storeCount: number; completedStoreCount: number; mode: "regions" | "workspace" | "items"; onClose: () => void }) {
+function SummaryModal({ region, stats, storeCount, completedStoreCount, mode, itemDetailStats, onClose }: { region?: string; stats: RegionStats; storeCount: number; completedStoreCount: number; mode: "regions" | "workspace" | "items"; itemDetailStats?: ReturnType<typeof itemDetailSummary>; onClose: () => void }) {
   const regionPercent = storeCount ? Math.round((completedStoreCount / storeCount) * 100) : 0;
   const itemPercent = stats.total ? Math.round((stats.completed / stats.total) * 100) : 0;
   return (
@@ -2543,6 +2539,14 @@ function SummaryModal({ region, stats, storeCount, completedStoreCount, mode, on
             <div><span>물품</span><strong>{stats.completed.toLocaleString()}<small>/{stats.total.toLocaleString()}</small></strong></div>
             <div className="progress-line"><span style={{ width: `${itemPercent}%` }} /></div>
             <em>미완료 {(stats.total - stats.completed).toLocaleString()}</em>
+          </div>
+        )}
+        {mode === "items" && itemDetailStats && (
+          <div className="summary-detail-grid">
+            <div><span>미진열</span><strong>{itemDetailStats.notDisplayed.toLocaleString()}</strong></div>
+            <div><span>사진누락</span><strong>{itemDetailStats.photoMissing.toLocaleString()}</strong></div>
+            <div><span>비정상진열</span><strong>{itemDetailStats.abnormalDisplay.toLocaleString()}</strong></div>
+            <div><span>미판매</span><strong>{itemDetailStats.notSold.toLocaleString()}</strong></div>
           </div>
         )}
       </section>
