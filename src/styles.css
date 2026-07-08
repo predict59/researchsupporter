@@ -286,29 +286,37 @@ textarea { min-height: 110px; resize: vertical; }
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   margin: -4px 0 14px;
   color: #52616b;
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 800;
 }
 .recent-region > div {
   min-width: 0;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
+  flex-wrap: nowrap;
+  gap: 5px;
 }
 .recent-region button {
-  min-height: 32px;
+  min-width: 0;
+  max-width: 82px;
+  min-height: 26px;
   border-radius: 999px;
-  padding: 0 12px;
+  padding: 0 8px;
   background: #ecfeff;
   border-color: #67e8f9;
   color: #155e75;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .mini-map-link {
-  min-height: 32px;
+  min-height: 26px;
+  padding: 0 8px;
+  font-size: 11px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
