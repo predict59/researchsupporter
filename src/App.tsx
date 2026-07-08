@@ -483,6 +483,7 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [storeSort, setStoreSort] = useState<StoreSort>("이름 순");
   const [itemSort, setItemSort] = useState<ItemSort>("기본 순");
+  const [itemsReturnView, setItemsReturnView] = useState<"workspace" | "store">("store");
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("list");
   const [workspaceToolsOpen, setWorkspaceToolsOpen] = useState(false);
   const [itemToolsOpen, setItemToolsOpen] = useState(false);
@@ -1004,6 +1005,7 @@ function App() {
     }
     setSelectedStoreId(store.id);
     setItemQuery("");
+    setItemsReturnView("workspace");
     const nextSettings = { ...settings, lastOpenedStoreId: store.id, currentRegion: store.region };
     setSettingsState(nextSettings);
     setView("items");
@@ -1367,7 +1369,7 @@ function App() {
     else if (view === "store") setView("workspace");
     else if (view === "items") {
       setItemQuery("");
-      setView("store");
+      setView(itemsReturnView);
     }
     else if (view === "item") {
       if (barcodeReturnItemId && selectedItemId === barcodeReturnItemId) returnToBarcodeModal(selectedItemId);
@@ -1731,7 +1733,7 @@ function App() {
               <h2>조사 입력</h2>
               <p>조사 품목: {storeItems.length.toLocaleString()}건</p>
               <label className="store-date-row"><input type="date" value={selectedStore.surveyDate} onChange={async (event) => { await putStore({ ...selectedStore, surveyDate: event.target.value, updatedAt: now() }); await refresh(selectedStore.region); }} /></label>
-              <button className="primary sticky-lite" onClick={() => selectedStore.operatingStatus ? (setItemQuery(""), setView("items")) : alert("매장 상태를 먼저 설정해 주세요.")}>조사 입력</button>
+              <button className="primary sticky-lite" onClick={() => selectedStore.operatingStatus ? (setItemQuery(""), setItemsReturnView("store"), setView("items")) : alert("매장 상태를 먼저 설정해 주세요.")}>조사 입력</button>
             </section>
           </div>
           <Contacts items={storeItems} />
@@ -2917,7 +2919,7 @@ function ItemEditor({ item, storeItems, storeOperatingStatus, photos, fromBarcod
       window.setTimeout(() => downloadPhotoBlob(photo.blob, `${draft.itemNo}.${suffix}`, photoExt(photo)), index * 250);
     });
   };
-  return <main className="page item-page"><section className="item-hero"><div className="item-hero-row"><span className="item-code">{draft.itemNo}</span><strong className="item-hero-name" title={draft.productName}>{draft.productName}</strong><a className="image-search-button" href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(draft.productName)}`} target="_blank" aria-label={`${draft.productName} 이미지 검색`}><Search size={15} /></a><Badge text={draft.status} /></div></section>
+  return <main className="page item-page"><section className="item-hero"><div className="item-hero-row"><span className="item-code">{draft.itemNo}</span><span className="item-hero-title"><strong className="item-hero-name" title={draft.productName}>{draft.productName}</strong><a className="image-search-button" href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(draft.productName)}`} target="_blank" aria-label={`${draft.productName} 이미지 검색`}><Search size={15} /></a></span><Badge text={draft.status} /></div></section>
     <ItemContact item={draft} />
     <details className="panel" open><summary>① 국군복지단 제시정보</summary><Info item={draft} /></details>
     <section className="panel"><h2>② 실물 확인</h2><Choice label="진열여부" note="*조사표에는 정상진열로 표기" value={draft.normalDisplay} values={["O", "X"]} onChange={updateNormalDisplay} /><Choice label="규격일치" disabled={draft.normalDisplay !== "O"} value={draft.normalDisplay === "O" ? draft.specMatch : ""} values={["O", "X"]} onChange={(value) => update({ specMatch: value as SurveyItem["specMatch"] })} /><Choice label="바코드일치" disabled={draft.normalDisplay !== "O"} value={draft.normalDisplay === "O" ? draft.barcodeMatch : ""} values={["O", "X"]} onChange={(value) => update({ barcodeMatch: value as SurveyItem["barcodeMatch"] })} /></section>

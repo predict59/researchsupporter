@@ -1023,6 +1023,12 @@ textarea { min-height: 110px; resize: vertical; }
   background: #fff;
   padding: 8px;
 }
+.item-hero-title {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 .item-hero-name {
   min-width: 0;
   color: #17202a;
