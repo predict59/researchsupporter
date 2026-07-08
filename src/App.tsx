@@ -41,6 +41,44 @@ const num = (value: string) => {
   const digits = value.replace(/\D/g, "");
   return digits === "" ? null : Number(digits);
 };
+function resetItemInput(item: SurveyItem): SurveyItem {
+  return {
+    ...item,
+    surveyDate: "",
+    normalDisplay: "",
+    specMatch: "",
+    barcodeMatch: "",
+    normalPrice: null,
+    hasDiscount: null,
+    discountPrice: null,
+    discountStartDate: "",
+    discountEndDate: "",
+    discountType: "",
+    discountOral: false,
+    discountPeriodMode: "",
+    priceJudgment: "",
+    abnormalDisplay: "",
+    photoCase: "",
+    barcodeRegistered: "",
+    abnormalStatus: "",
+    posChecked: "",
+    posPrice: null,
+    memo: "",
+    status: "미조사",
+    updatedAt: now(),
+  };
+}
+function hasItemInput(item: SurveyItem) {
+  return item.status !== "미조사"
+    || Boolean(item.surveyDate)
+    || Boolean(item.normalDisplay)
+    || item.normalPrice !== null
+    || item.discountPrice !== null
+    || Boolean(item.memo)
+    || Boolean(item.barcodeRegistered)
+    || Boolean(item.abnormalStatus)
+    || Boolean(item.posChecked);
+}
 const PHOTO_MAX_EDGE = 1280;
 const PHOTO_TARGET_BYTES = 950 * 1024;
 const PHOTO_MIN_EDGE = 760;
@@ -1147,6 +1185,35 @@ function App() {
     setStoreStatusMessage("영업 중으로 전환하고 품목 정보를 초기화했습니다.");
   }
 
+  async function resetSelectedStoreAll() {
+    if (!selectedStore) return;
+    const ok = await askConfirm({
+      title: "매장 정보를 초기화할까요?",
+      message: `${selectedStore.storeName}에 저장된 매장 전경사진, 상태, 조사일, 하위 물품 입력값과 물품 사진이 모두 초기화됩니다.`,
+      confirmText: "초기화",
+      cancelText: "취소",
+      danger: true,
+      plain: true,
+    });
+    if (!ok) return;
+    const storePhotos = await getPhotosByStore(selectedStore.id);
+    await Promise.all(storePhotos.map((photo) => deletePhoto(photo.id)));
+    const resetItems = storeItems.map((item) => resetItemInput(item));
+    await Promise.all(resetItems.map(putItem));
+    await putStore({
+      ...selectedStore,
+      surveyDate: today(),
+      status: "미시작",
+      completedAt: undefined,
+      startedAt: undefined,
+      frontPhotoId: undefined,
+      operatingStatus: undefined,
+      updatedAt: now(),
+    });
+    setStoreStatusMessage("매장 정보와 하위 물품 정보를 초기화했습니다.");
+    await refresh(selectedStore.region);
+  }
+
   async function doExportExcel(region = currentRegion) {
     if (!region) return;
     await exportRegionExcel(region, items.filter((item) => item.region === region));
@@ -1402,6 +1469,8 @@ function App() {
               const allItemStats = summarize(items.filter((item) => item.region === region.name), regionPhotos);
               const assignedItemStats = summarize(items.filter((item) => item.region === region.name && assignedStoreIds.has(item.storeId)), regionPhotos);
               const hasPartialAssignment = regionStoreIds.size > 0 && assignedStoreIds.size !== regionStoreIds.size;
+              const hasDownloadData = items.some((item) => item.region === region.name && hasItemInput(item))
+                || stores.some((store) => store.region === region.name && (store.frontPhotoId || store.operatingStatus));
               return (
                 <article className="card region-card" key={region.name}>
                   <div className="region-card-head">
@@ -1423,8 +1492,8 @@ function App() {
                   />
                   <div className="region-actions">
                     <button className="primary" onClick={() => chooseRegion(region.name)}>작업</button>
-                    <button title="엑셀 내보내기" onClick={() => doExportExcel(region.name)}><Download size={16} />엑셀</button>
-                    <button title="사진 ZIP" onClick={() => doExportZip(region.name)}><Download size={16} />사진</button>
+                    <button title={hasDownloadData ? "엑셀 내보내기" : "입력된 조사 정보가 없어 내려받을 수 없습니다."} disabled={!hasDownloadData} onClick={() => doExportExcel(region.name)}><Download size={16} />엑셀</button>
+                    <button title={hasDownloadData ? "사진 ZIP" : "입력된 조사 정보가 없어 내려받을 수 없습니다."} disabled={!hasDownloadData} onClick={() => doExportZip(region.name)}><Download size={16} />사진</button>
                     <button title="백업 내려받기" onClick={() => doBackup(region.name)}><Download size={16} />백업</button>
                   </div>
                 </article>
@@ -1465,6 +1534,13 @@ function App() {
             </section>
           )}
           {workspaceMode === "list" && (
+          assignedRegionStores.length === 0 ? (
+            <section className="panel empty-assignment">
+              <strong>담당매장이 선택되지 않았습니다.</strong>
+              <p>메인에서 해당 지역 카드의 점세개 메뉴를 눌러 담당매장을 추가해 주세요.</p>
+              <button type="button" className="primary" onClick={() => openAssignment(currentRegion)}>담당매장 관리</button>
+            </section>
+          ) : (
           <div className="list">
             {assignedVisibleRegionStores.map((store) => {
               const ownItems = regionItemsByStore.get(store.id) ?? [];
@@ -1486,6 +1562,7 @@ function App() {
               );
             })}
           </div>
+          )
           )}
           {workspaceMode === "map" && (
             <StoreMapView
@@ -1534,10 +1611,10 @@ function App() {
             <div className={`photo-slot store-front-slot ${selectedStore.frontPhotoId ? "uploaded" : ""}`}>
               {frontPhoto && <PhotoPreview photo={frontPhoto} className="wide-preview" />}
               <div className="photo-actions store-front-actions">
-                {!selectedStore.frontPhotoId && <PhotoInput label="촬영/첨부" onFile={saveStorePhoto} />}
+                {!selectedStore.frontPhotoId && <PhotoInput label="" pickLabel="갤러리 선택" onFile={saveStorePhoto} />}
                 {selectedStore.frontPhotoId && <button className="danger" onClick={removeStorePhoto}>지우기</button>}
               </div>
-              <button type="button" className="store-front-reuse" onClick={() => setFrontPhotoPickerOpen(true)}>기존 사진 사용</button>
+              <button type="button" className="store-front-reuse" onClick={() => setFrontPhotoPickerOpen(true)}>기존 전경 사진 사용</button>
             </div>
               );
             })()}
@@ -1566,6 +1643,7 @@ function App() {
             <p>조사 품목: {storeItems.length.toLocaleString()}건</p>
             <label className="store-date-row"><span>방문 조사일</span><input type="date" value={selectedStore.surveyDate} onChange={async (event) => { await putStore({ ...selectedStore, surveyDate: event.target.value, updatedAt: now() }); await refresh(selectedStore.region); }} /></label>
             <button className="primary sticky-lite" onClick={() => selectedStore.frontPhotoId && selectedStore.operatingStatus ? (setItemQuery(""), setView("items")) : alert(selectedStore.frontPhotoId ? "매장 상태를 먼저 설정해 주세요." : "매장 전경사진을 먼저 촬영/선택해 주세요.")}>조사 입력</button>
+            <button type="button" className="danger reset-store-button" onClick={resetSelectedStoreAll}>매장 정보 초기화</button>
           </section>
         </main>
       )}
@@ -2384,15 +2462,15 @@ function ItemContact({ item }: { item: SurveyItem }) {
   );
 }
 
-function PhotoInput({ id, label, onFile }: { id?: string; label: string; onFile: (file: File) => void | Promise<void> }) {
+function PhotoInput({ id, label, cameraLabel = "촬영", pickLabel = "선택", onFile }: { id?: string; label: string; cameraLabel?: string; pickLabel?: string; onFile: (file: File) => void | Promise<void> }) {
   const pickId = `${id ?? uid("photo_pick")}-pick`;
   const cameraId = `${id ?? uid("photo_camera")}-camera`;
   return (
     <div className="photo-picker">
-      <span>{label}</span>
+      {label && <span>{label}</span>}
       <div>
-        <label className="photo-button" htmlFor={cameraId}><Camera size={18} />촬영<input id={cameraId} type="file" accept="image/*" capture="environment" onChange={(event) => event.target.files?.[0] && onFile(event.target.files[0])} /></label>
-        <label className="photo-button" htmlFor={pickId}><Upload size={18} />선택<input id={pickId} type="file" accept="image/*" onChange={(event) => event.target.files?.[0] && onFile(event.target.files[0])} /></label>
+        <label className="photo-button" htmlFor={cameraId}><Camera size={18} />{cameraLabel}<input id={cameraId} type="file" accept="image/*" capture="environment" onChange={(event) => event.target.files?.[0] && onFile(event.target.files[0])} /></label>
+        <label className="photo-button" htmlFor={pickId}><Upload size={18} />{pickLabel}<input id={pickId} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={(event) => event.target.files?.[0] && onFile(event.target.files[0])} /></label>
       </div>
     </div>
   );
@@ -2565,17 +2643,34 @@ function ItemEditor({ item, storeItems, storeOperatingStatus, photos, fromBarcod
       memo,
     });
   };
-  const updateDiscountEnabled = (value: string) => {
-    const hasDiscount = value === "할인 있음";
+  const discountChoice = draft.hasDiscount === null ? "" : draft.hasDiscount ? (draft.memo.includes("1+1 행사") ? "묶음할인(1+1, 50%)" : "단품할인") : "할인 없음";
+  const updateDiscountChoice = (value: string) => {
+    const cleanBundleMemo = removeMemoTexts(draft.memo, ["1+1 행사"]);
+    if (value === "할인 없음" || value === "") {
+      update({
+        hasDiscount: value === "" ? null : false,
+        discountPrice: null,
+        discountStartDate: "",
+        discountEndDate: "",
+        discountType: "",
+        discountOral: false,
+        discountPeriodMode: "",
+        memo: removeMemoTexts(draft.memo, ["1+1 행사", "상시할인", "할인 정보 확인 불가", "구두확인"]),
+      });
+      return;
+    }
+    if (value === "묶음할인(1+1, 50%)") {
+      update({
+        hasDiscount: true,
+        discountPrice: draft.normalPrice !== null ? Math.round(draft.normalPrice / 2) : draft.discountPrice,
+        memo: appendMemoText(cleanBundleMemo, "1+1 행사"),
+      });
+      return;
+    }
     update({
-      hasDiscount,
-      discountPrice: hasDiscount ? draft.discountPrice : null,
-      discountStartDate: hasDiscount ? draft.discountStartDate : "",
-      discountEndDate: hasDiscount ? draft.discountEndDate : "",
-      discountType: hasDiscount ? draft.discountType : "",
-      discountOral: hasDiscount ? draft.discountOral : false,
-      discountPeriodMode: hasDiscount ? draft.discountPeriodMode : "",
-      memo: hasDiscount ? draft.memo : removeMemoTexts(draft.memo, ["1+1 행사", "상시할인", "할인 정보 확인 불가", "구두확인"]),
+      hasDiscount: true,
+      discountPrice: draft.memo.includes("1+1 행사") ? null : draft.discountPrice,
+      memo: cleanBundleMemo,
     });
   };
   const updateDiscountMode = (mode: NonNullable<SurveyItem["discountPeriodMode"]>) => {
@@ -2604,14 +2699,6 @@ function ItemEditor({ item, storeItems, storeOperatingStatus, photos, fromBarcod
       discountPeriodMode: mode,
       discountType: periodTypeFromDates(draft.discountStartDate, draft.discountEndDate),
       memo: baseMemo,
-    });
-  };
-  const updateOnePlusOne = (checked: boolean) => {
-    const memo = checked ? appendMemo("1+1 행사") : removeMemoTexts(draft.memo, ["1+1 행사"]);
-    update({
-      hasDiscount: checked ? true : draft.hasDiscount,
-      discountPrice: checked && draft.normalPrice !== null ? Math.round(draft.normalPrice / 2) : null,
-      memo,
     });
   };
   const updateDiscountDate = (field: "discountStartDate" | "discountEndDate", value: string) => {
@@ -2688,6 +2775,29 @@ function ItemEditor({ item, storeItems, storeOperatingStatus, photos, fromBarcod
     }
     else setSaveMessage("마지막 품목입니다.");
   };
+  const resetCurrentItem = async () => {
+    const ok = await askConfirm({
+      title: "물품 정보를 초기화할까요?",
+      message: `${draft.itemNo} ${draft.productName}에 저장된 가격정보, 실물 확인값, 특이사항, 물품 사진이 모두 초기화됩니다.`,
+      confirmText: "초기화",
+      cancelText: "취소",
+      danger: true,
+      plain: true,
+    });
+    if (!ok) return;
+    const itemPhotosToDelete = localPhotos.filter((photo) => photo.itemId === draft.id);
+    await Promise.all(itemPhotosToDelete.filter((photo) => !photo.id.startsWith("temp_")).map((photo) => deletePhoto(photo.id)));
+    const resetItem = resetItemInput(draft);
+    await putItem(resetItem);
+    setDraft(resetItem);
+    setLocalPhotos((old) => old.filter((photo) => photo.itemId !== draft.id));
+    setDeletedPhotoIds([]);
+    setPhotoMessage("");
+    setPriceOcrMessage("");
+    setPriceCandidates([]);
+    await onSaved();
+    setSaveMessage("물품 정보를 초기화했습니다.");
+  };
   return <main className="page item-page"><section className="item-hero"><div className="item-hero-row"><span className="item-code">{draft.itemNo}</span><strong className="item-hero-name" title={draft.productName}>{draft.productName}</strong><Badge text={draft.status} /></div></section>
     <ItemContact item={draft} />
     <details className="panel" open><summary>① 국군복지단 제시정보</summary><Info item={draft} /></details>
@@ -2708,16 +2818,12 @@ function ItemEditor({ item, storeItems, storeOperatingStatus, photos, fromBarcod
       <PriceCandidateChips label="정상가 후보" candidates={priceCandidates} disabled={priceBlocked} onPick={(value) => update({ normalPrice: value, discountPrice: draft.memo.includes("1+1 행사") ? Math.round(value / 2) : draft.discountPrice })} />
       <Money label="정상가" disabled={priceBlocked} value={draft.normalPrice} onChange={(value) => { const normalPrice = num(value); update({ normalPrice, discountPrice: draft.memo.includes("1+1 행사") && normalPrice !== null ? Math.round(normalPrice / 2) : draft.discountPrice }); }} />
       {priceFeedback && <div className="price-feedback">{priceFeedback.messages.map((message) => <span className={message.type} key={message.text}><i aria-hidden="true">{message.type === "warn" ? "!" : "✓"}</i>{message.text}</span>)}</div>}
-      <Choice label="할인 여부" disabled={priceBlocked} value={draft.hasDiscount === null ? "" : draft.hasDiscount ? "할인 있음" : "할인 없음"} values={["할인 없음", "할인 있음"]} onChange={updateDiscountEnabled} />
-      <div className={draft.hasDiscount === false || priceBlocked ? "disabled-block" : ""}>
-        <div className="field-row">
-          <span>행사여부</span>
-          <label className="pretty-check"><input type="checkbox" disabled={draft.hasDiscount === false || priceBlocked} checked={draft.memo.includes("1+1 행사")} onChange={(event) => updateOnePlusOne(event.target.checked)} /><i />1+1 행사</label>
-        </div>
-        <PriceCandidateChips label="할인가 후보" candidates={priceCandidates} disabled={draft.hasDiscount === false || priceBlocked} onPick={(value) => update({ hasDiscount: true, discountPrice: value })} />
-        <Money label="할인가" value={draft.discountPrice} disabled={draft.hasDiscount === false || priceBlocked} onChange={(value) => update({ discountPrice: num(value) })} />
+      <Choice label="할인 여부" disabled={priceBlocked} value={discountChoice} values={["할인 없음", "단품할인", "묶음할인(1+1, 50%)"]} onChange={updateDiscountChoice} />
+      <div className={draft.hasDiscount !== true || priceBlocked ? "disabled-block" : ""}>
+        <PriceCandidateChips label="할인가 후보" candidates={priceCandidates} disabled={draft.hasDiscount !== true || priceBlocked} onPick={(value) => update({ hasDiscount: true, discountPrice: value })} />
+        <Money label="할인가" value={draft.discountPrice} disabled={draft.hasDiscount !== true || priceBlocked} onChange={(value) => update({ discountPrice: num(value) })} />
         <DiscountControls
-          disabled={draft.hasDiscount === false || priceBlocked}
+          disabled={draft.hasDiscount !== true || priceBlocked}
           mode={draft.discountPeriodMode ?? ""}
           oral={draft.discountOral ?? draft.discountType.includes("구두")}
           start={draft.discountStartDate}
@@ -2730,6 +2836,7 @@ function ItemEditor({ item, storeItems, storeOperatingStatus, photos, fromBarcod
       </div>
     </section>
     <section className="panel"><h2>⑥ 특이사항</h2><div className={`abnormal-block ${draft.normalDisplay === "X" ? "disabled-block" : ""}`}><Choice label="비정상진열" disabled={draft.normalDisplay === "X"} value={draft.normalDisplay === "X" ? "" : draft.abnormalDisplay ?? ""} values={["O", "X"]} onChange={(value) => update({ abnormalDisplay: value as SurveyItem["abnormalDisplay"] })} />{draft.abnormalDisplay === "O" && draft.normalDisplay !== "X" && <p className="small-help warn">비정상진열이면 어떤 위치에 어떻게 진열되어 있었는지 아래 비고에 적어주세요.</p>}</div><div className="memo-block"><h3>비고</h3><p className="small-help">자주 쓰는 문구를 누르면 비고에 추가됩니다. 다시 누르면 해당 문구만 제거됩니다.</p><div className="chips memo-chips">{["가격 수기 입력", "폐점", "품절", "재고 소진", "재입고 예정", "1+1 행사", "임시휴업", "판매처 미협조"].map((text) => { const active = draft.memo.split("/").map((part) => part.trim()).includes(text); return <button key={text} className={active ? "active" : ""} onClick={() => update({ memo: toggleMemo(text) })}>{text}</button>; })}</div><textarea placeholder="예: 판매처 미협조 / 재입고 예정 / 사진 촬영 불가" value={draft.memo} onChange={(event) => update({ memo: event.target.value })} /></div></section>
+    <section className="panel reset-panel"><button type="button" className="danger" onClick={resetCurrentItem}>물품 정보 초기화</button></section>
     {saveMessage && <div className={`save-toast ${saveMessage.includes("실패") ? "danger-toast" : ""}`}>{saveMessage}</div>}
     <div className="item-action-fab">
       <div className="item-progress-mini"><span style={{ width: `${storeItems.length ? Math.round((storeItems.filter((candidate) => candidate.status === "완료").length + (draft.status === "완료" && !storeItems.find((candidate) => candidate.id === draft.id && candidate.status === "완료") ? 1 : 0)) / storeItems.length * 100) : 0}%` }} /></div>
