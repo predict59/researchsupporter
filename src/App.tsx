@@ -87,6 +87,7 @@ const PHOTO_MAX_EDGE = 1280;
 const PHOTO_TARGET_BYTES = 950 * 1024;
 const PHOTO_MIN_EDGE = 760;
 const PHOTO_QUALITY_STEPS = [0.72, 0.64, 0.56, 0.48, 0.4, 0.32];
+const ORIGINAL_DOWNLOAD_SETTING_KEY = "researchsupporter_download_original_photos";
 const PRICE_DIFF_WARN_PERCENT = 30;
 const TARGET_MAP_URL = "https://www.google.com/maps/d/u/1/edit?mid=1ej99Lo6WS4GROBCQPr0a66MhQR_vXuM&usp=sharing";
 type BarcodeImageIndex = Record<string, string>;
@@ -95,6 +96,28 @@ type PriceOcrWorker = Awaited<ReturnType<typeof import("tesseract.js")["createWo
 const PRICE_KEYWORDS = /원|가격|정상|판매|할인|행사|특가|세일|SALE|sale|올리브|카드|멤버십|회원|쿠폰/;
 const PRICE_MAX_VALUE = 999999;
 type GeocodeResult = { latitude: number; longitude: number; displayName?: string };
+type PhotoSource = "camera" | "picker";
+const sanitizeFileName = (name: string) => name.replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, " ").trim() || "photo";
+const originalFileExt = (file: File) => {
+  const fromName = file.name.split(".").pop();
+  if (fromName && fromName.length <= 5) return fromName.toLowerCase();
+  if (file.type.includes("png")) return "png";
+  if (file.type.includes("webp")) return "webp";
+  if (file.type.includes("heic")) return "heic";
+  if (file.type.includes("heif")) return "heif";
+  return "jpg";
+};
+function downloadOriginalPhoto(file: File, baseName: string) {
+  const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
+  const href = URL.createObjectURL(file);
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.download = `${sanitizeFileName(baseName)}_${stamp}.${originalFileExt(file)}`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(href), 1000);
+}
 const appendMemoText = (memo: string, text: string) => {
   const parts = memo.split("/").map((part) => part.trim()).filter(Boolean);
   if (parts.includes(text)) return memo;
@@ -463,6 +486,7 @@ function App() {
   const [storeStatusDraft, setStoreStatusDraft] = useState<StoreOperatingStatus | "">("");
   const [storeStatusMessage, setStoreStatusMessage] = useState("");
   const [storeResetMenuOpen, setStoreResetMenuOpen] = useState(false);
+  const [downloadOriginalPhotos, setDownloadOriginalPhotos] = useState(() => localStorage.getItem(ORIGINAL_DOWNLOAD_SETTING_KEY) === "true");
   const confirmResolver = useRef<((value: boolean) => void) | null>(null);
   const locatePromiseRef = useRef<Promise<{ latitude: number; longitude: number } | null> | null>(null);
   const initialLocationRequested = useRef(false);
@@ -590,6 +614,10 @@ function App() {
   useEffect(() => {
     viewRef.current = view;
   }, [view]);
+
+  useEffect(() => {
+    localStorage.setItem(ORIGINAL_DOWNLOAD_SETTING_KEY, downloadOriginalPhotos ? "true" : "false");
+  }, [downloadOriginalPhotos]);
 
   useEffect(() => {
     if (isBooting) return;
@@ -974,8 +1002,11 @@ function App() {
     setStores((old) => old.map((store) => updates.get(store.id) ?? store));
   }
 
-  async function saveStorePhoto(file: File) {
+  async function saveStorePhoto(file: File, source: PhotoSource = "picker") {
     if (!selectedStore) return;
+    if (source === "camera" && downloadOriginalPhotos) {
+      downloadOriginalPhoto(file, `${selectedStore.storeName}_매장전경`);
+    }
     if (selectedStore.frontPhotoId) await deletePhoto(selectedStore.frontPhotoId);
     const resized = await resizePhoto(file);
     const photo: SurveyPhoto = { id: uid("photo"), region: selectedStore.region, storeId: selectedStore.id, type: "STORE_FRONT", blob: resized.blob, originalName: file.name, mimeType: resized.mimeType, takenAt: now() };
@@ -1430,6 +1461,10 @@ function App() {
           <button disabled={!currentRegion} onClick={() => { setView("validation"); setMenuOpen(false); }}>검증</button>
           <button onClick={openStorageInfo}>자체저장공간</button>
           <button onClick={() => { setView("backup"); setMenuOpen(false); }}>백업/복원</button>
+          <label className="menu-check" onClick={(event) => event.stopPropagation()}>
+            <input type="checkbox" checked={downloadOriginalPhotos} onChange={(event) => setDownloadOriginalPhotos(event.target.checked)} />
+            <span>촬영 원본을 다운로드 폴더에 저장</span>
+          </label>
         </div>
       </header>
       {view === "upload" && (
@@ -1715,7 +1750,7 @@ function App() {
       )}
 
       {view === "item" && selectedItem && (
-        <ItemEditor item={selectedItem} storeItems={storeItems} storeOperatingStatus={stores.find((store) => store.id === selectedItem.storeId)?.operatingStatus ?? ""} photos={photos.filter((photo) => photo.storeId === selectedItem.storeId)} fromBarcodeFlow={barcodeReturnItemId === selectedItem.id} onSave={saveItem} onSaved={async () => { await refresh(selectedItem.region); }} onList={(focusId) => { if (focusId) setSelectedItemId(focusId); setView("items"); }} onStoreList={() => { setFilter("전체"); setSelectedStoreId(selectedItem.storeId); setView("workspace"); }} onMove={(id) => setSelectedItemId(id)} onBarcodeReturn={returnToBarcodeModal} askConfirm={askConfirm} />
+        <ItemEditor item={selectedItem} storeItems={storeItems} storeOperatingStatus={stores.find((store) => store.id === selectedItem.storeId)?.operatingStatus ?? ""} photos={photos.filter((photo) => photo.storeId === selectedItem.storeId)} fromBarcodeFlow={barcodeReturnItemId === selectedItem.id} downloadOriginalPhotos={downloadOriginalPhotos} onSave={saveItem} onSaved={async () => { await refresh(selectedItem.region); }} onList={(focusId) => { if (focusId) setSelectedItemId(focusId); setView("items"); }} onStoreList={() => { setFilter("전체"); setSelectedStoreId(selectedItem.storeId); setView("workspace"); }} onMove={(id) => setSelectedItemId(id)} onBarcodeReturn={returnToBarcodeModal} askConfirm={askConfirm} />
       )}
 
       {view === "validation" && (
@@ -2489,21 +2524,21 @@ function ItemContact({ item }: { item: SurveyItem }) {
   );
 }
 
-function PhotoInput({ id, label, cameraLabel = "촬영", pickLabel = "선택", onFile }: { id?: string; label: string; cameraLabel?: string; pickLabel?: string; onFile: (file: File) => void | Promise<void> }) {
+function PhotoInput({ id, label, cameraLabel = "촬영", pickLabel = "선택", onFile }: { id?: string; label: string; cameraLabel?: string; pickLabel?: string; onFile: (file: File, source: PhotoSource) => void | Promise<void> }) {
   const pickId = `${id ?? uid("photo_pick")}-pick`;
   const cameraId = `${id ?? uid("photo_camera")}-camera`;
   return (
     <div className="photo-picker">
       {label && <span>{label}</span>}
       <div>
-        <label className="photo-button" htmlFor={cameraId}><Camera size={18} />{cameraLabel}<input id={cameraId} type="file" accept="image/*" capture="environment" onChange={(event) => event.target.files?.[0] && onFile(event.target.files[0])} /></label>
-        <label className="photo-button" htmlFor={pickId}><Upload size={18} />{pickLabel}<input id={pickId} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={(event) => event.target.files?.[0] && onFile(event.target.files[0])} /></label>
+        <label className="photo-button" htmlFor={cameraId}><Camera size={18} />{cameraLabel}<input id={cameraId} type="file" accept="image/*" capture="environment" onChange={(event) => event.target.files?.[0] && onFile(event.target.files[0], "camera")} /></label>
+        <label className="photo-button" htmlFor={pickId}><Upload size={18} />{pickLabel}<input id={pickId} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={(event) => event.target.files?.[0] && onFile(event.target.files[0], "picker")} /></label>
       </div>
     </div>
   );
 }
 
-function ItemEditor({ item, storeItems, storeOperatingStatus, photos, fromBarcodeFlow, onSave, onSaved, onList, onStoreList, onMove, onBarcodeReturn, askConfirm }: { item: SurveyItem; storeItems: SurveyItem[]; storeOperatingStatus: StoreOperatingStatus | ""; photos: SurveyPhoto[]; fromBarcodeFlow?: boolean; onSave: (item: SurveyItem, photoOverride?: SurveyPhoto[]) => Promise<boolean>; onSaved: () => Promise<void>; onList: (focusId?: string) => void; onStoreList: () => void; onMove: (id: string) => void; onBarcodeReturn?: (id: string) => void; askConfirm: (options: ConfirmState) => Promise<boolean> }) {
+function ItemEditor({ item, storeItems, storeOperatingStatus, photos, fromBarcodeFlow, downloadOriginalPhotos, onSave, onSaved, onList, onStoreList, onMove, onBarcodeReturn, askConfirm }: { item: SurveyItem; storeItems: SurveyItem[]; storeOperatingStatus: StoreOperatingStatus | ""; photos: SurveyPhoto[]; fromBarcodeFlow?: boolean; downloadOriginalPhotos: boolean; onSave: (item: SurveyItem, photoOverride?: SurveyPhoto[]) => Promise<boolean>; onSaved: () => Promise<void>; onList: (focusId?: string) => void; onStoreList: () => void; onMove: (id: string) => void; onBarcodeReturn?: (id: string) => void; askConfirm: (options: ConfirmState) => Promise<boolean> }) {
   const [draft, setDraft] = useState(item);
   const [localPhotos, setLocalPhotos] = useState<SurveyPhoto[]>(photos);
   const [deletedPhotoIds, setDeletedPhotoIds] = useState<string[]>([]);
@@ -2564,7 +2599,11 @@ function ItemEditor({ item, storeItems, storeOperatingStatus, photos, fromBarcod
       setPriceOcrMessage("가격 인식 실패");
     }
   };
-  const upload = async (type: PhotoType, file: File) => {
+  const upload = async (type: PhotoType, file: File, source: PhotoSource = "picker") => {
+    if (source === "camera" && downloadOriginalPhotos) {
+      const label = type === "PRODUCT_DISPLAY" ? "제품진열사진" : type === "PRODUCT_INFO_BARCODE" ? "제품정보사진" : "POS영수증사진";
+      downloadOriginalPhoto(file, `${draft.itemNo}_${label}`);
+    }
     const resized = await resizePhoto(file);
     const oldPhotos = localPhotos.filter((photo) => photo.itemId === draft.id && photo.type === type);
     setDeletedPhotoIds((old) => [...old, ...oldPhotos.filter((photo) => !photo.id.startsWith("temp_")).map((photo) => photo.id)]);
@@ -2890,7 +2929,7 @@ function PriceCandidateChips({ label, candidates, disabled, onPick }: { label: s
   );
 }
 
-function PhotoSlot({ id, label, description, disabled, photo, message, messageTone, onFile, onDelete }: { id: string; label: string; description: string; disabled?: boolean; photo?: SurveyPhoto; message?: string; messageTone?: "ok" | "warn" | "pending"; onFile: (file: File) => void | Promise<void>; onDelete: (photo: SurveyPhoto) => void | Promise<void> }) {
+function PhotoSlot({ id, label, description, disabled, photo, message, messageTone, onFile, onDelete }: { id: string; label: string; description: string; disabled?: boolean; photo?: SurveyPhoto; message?: string; messageTone?: "ok" | "warn" | "pending"; onFile: (file: File, source: PhotoSource) => void | Promise<void>; onDelete: (photo: SurveyPhoto) => void | Promise<void> }) {
   return (
     <div id={`${id}-slot`} className={`photo-slot ${photo ? "uploaded" : ""} ${disabled ? "photo-disabled" : ""}`}>
       <div>
