@@ -1782,7 +1782,7 @@ textarea { min-height: 110px; resize: vertical; }
 .card-head {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 10px;
+  gap: 8px;
   align-items: start;
 }
 .card-head > div {
@@ -1792,9 +1792,10 @@ textarea { min-height: 110px; resize: vertical; }
   display: grid;
   grid-template-columns: minmax(0, 1fr) max-content;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
   min-width: 0;
   max-width: 100%;
+  margin-bottom: 0;
 }
 .store-name-text {
   min-width: 0;
@@ -1802,6 +1803,12 @@ textarea { min-height: 110px; resize: vertical; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.18;
+}
+.store-card .card-head p {
+  margin: 2px 0 0;
+  color: #334155;
+  font-size: 13px;
   line-height: 1.32;
 }
 .card-menu {
@@ -1944,12 +1951,12 @@ textarea { min-height: 110px; resize: vertical; }
 .store-distance {
   display: inline-flex;
   width: fit-content;
-  margin: 6px 0 2px;
+  margin: 3px 0 1px;
   border-radius: 999px;
-  padding: 4px 8px;
+  padding: 2px 7px;
   background: #ecfeff;
   color: #0e7490;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 900;
 }
 .map-excluded-badge {
