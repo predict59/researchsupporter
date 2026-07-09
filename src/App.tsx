@@ -4,7 +4,7 @@ import { clearAllData, deletePhoto, getBarcodeIndex, getItems, getPhotos, getPho
 import { extractBarcodeImages } from "./barcodeImages";
 import { parseContactRows, parseSurveyWorkbook, mergeContacts, rebuildStoresAndRegions } from "./excel";
 import { dataUrlToBlob, exportBackup, exportRegionExcel, exportRegionZip } from "./exporters";
-import { downloadBlob, mapSearchAddress, requiredPhotoLabels, summarize } from "./logic";
+import { mapSearchAddress, requiredPhotoLabels, summarize } from "./logic";
 import type { AppSettings, BackupPayload, PhotoType, Region, RegionStats, StoreOperatingStatus, SurveyItem, SurveyPhoto, SurveyStore } from "./types";
 
 type View = "upload" | "regions" | "assignment" | "workspace" | "store" | "items" | "item" | "backup" | "validation";
@@ -121,9 +121,16 @@ const photoExt = (fileOrPhoto: File | SurveyPhoto) => {
   if (type.includes("heif")) return "heif";
   return "jpg";
 };
-async function downloadPhotoBlob(blob: Blob, baseName: string, ext = "jpg") {
+function downloadPhotoBlob(blob: Blob, baseName: string, ext = "jpg") {
   const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 14);
-  await downloadBlob(blob, `${sanitizeFileName(baseName)}_${stamp}.${ext}`);
+  const href = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.download = `${sanitizeFileName(baseName)}_${stamp}.${ext}`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(href), 1000);
 }
 const appendMemoText = (memo: string, text: string) => {
   const parts = memo.split("/").map((part) => part.trim()).filter(Boolean);
