@@ -1,5 +1,6 @@
 import { Camera, CheckCircle2, ChevronDown, ChevronUp, Download, Menu, MoreVertical, Phone, SlidersHorizontal, Search, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ChangeEvent } from "react";
 import { clearAllData, deletePhoto, getBarcodeIndex, getItems, getPhotos, getPhotosByRegion, getPhotosByStore, getRegions, getSettings, getStores, importAllData, importRegionData, now, putItem, putPhoto, putStore, saveBarcodeIndex, saveParsedData, saveSettings, today, uid } from "./db";
 import { extractBarcodeImages } from "./barcodeImages";
 import { parseContactRows, parseSurveyWorkbook, mergeContacts, rebuildStoresAndRegions } from "./excel";
@@ -49,6 +50,13 @@ const searchIncludes = (text: string, query: string) => {
   return source.includes(needle) || toChosung(source).includes(needle);
 };
 const nextRecentRegions = (current: string[] | undefined, region: string) => [region, ...(current ?? []).filter((name) => name !== region)].slice(0, 3);
+const itemNoOrder = (itemNo: string) => {
+  const parsed = Number(itemNo.replace(/\D/g, ""));
+  return Number.isFinite(parsed) ? parsed : Number.MAX_SAFE_INTEGER;
+};
+const compareSurveyItemOrder = (a: SurveyItem, b: SurveyItem) =>
+  (a.sourceOrder ?? itemNoOrder(a.itemNo)) - (b.sourceOrder ?? itemNoOrder(b.itemNo))
+  || a.itemNo.localeCompare(b.itemNo, "ko", { numeric: true });
 
 const emptyStats: RegionStats = { total: 0, completed: 0, inProgress: 0, notStarted: 0, photoMissing: 0 };
 const num = (value: string) => {
@@ -468,6 +476,7 @@ function App() {
   const [photos, setPhotos] = useState<SurveyPhoto[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState("");
   const [selectedItemId, setSelectedItemId] = useState("");
+  const [itemNavigationIds, setItemNavigationIds] = useState<string[]>([]);
   const [mapFocusStoreId, setMapFocusStoreId] = useState("");
   const [regionQuery, setRegionQuery] = useState("");
   const [storeQuery, setStoreQuery] = useState("");
@@ -592,7 +601,7 @@ function App() {
     .filter((photo) => photo.type === "STORE_FRONT" && photo.id !== selectedStore?.frontPhotoId)
     .sort((a, b) => `${b.takenAt}`.localeCompare(`${a.takenAt}`)), [photos, selectedStore?.frontPhotoId]);
   const visibleStoreItems = useMemo(() => [...storeItems]
-    .sort((a, b) => itemSort === "물품코드 순" ? a.itemNo.localeCompare(b.itemNo, "ko", { numeric: true }) : 0)
+    .sort((a, b) => itemSort === "물품코드 순" ? a.itemNo.localeCompare(b.itemNo, "ko", { numeric: true }) : compareSurveyItemOrder(a, b))
     .filter((item) => searchIncludes(`${item.itemNo} ${item.productName} ${item.barcode} ${item.companyManager} ${item.companyName} ${item.companyTel} ${item.martTel}`, itemQuery))
     .filter((item) => {
       if (filter === "전체") return true;
@@ -604,6 +613,10 @@ function App() {
     }), [storeItems, itemQuery, filter, photos, itemSort]);
   const barcodeModalItem = items.find((item) => item.id === barcodeModalItemId);
   const barcodeModalItems = visibleStoreItems.length ? visibleStoreItems : storeItems;
+  const itemNavigationItems = useMemo(() => {
+    const itemById = new Map(items.map((item) => [item.id, item]));
+    return itemNavigationIds.map((id) => itemById.get(id)).filter((item): item is SurveyItem => Boolean(item));
+  }, [items, itemNavigationIds]);
   useEffect(() => {
     setStoreStatusDraft(selectedStore?.operatingStatus ?? "");
     setStoreStatusMessage("");
@@ -1117,6 +1130,7 @@ function App() {
 
   function openItemFromBarcodeModal(itemId: string) {
     setBarcodeReturnItemId(itemId);
+    setItemNavigationIds(barcodeModalItems.map((item) => item.id));
     setSelectedItemId(itemId);
     setBarcodeModalItemId("");
     setView("item");
@@ -1791,8 +1805,8 @@ function App() {
                     </dl>
                   </div>
                   <div className="item-card-actions">
-                    <button type="button" onClick={() => setBarcodeModalItemId(item.id)}>바코드</button>
-                    <button className="primary" onClick={() => { setBarcodeReturnItemId(""); setSelectedItemId(item.id); setView("item"); }}>입력</button>
+                    <button type="button" onClick={() => { setItemNavigationIds(visibleStoreItems.map((candidate) => candidate.id)); setBarcodeModalItemId(item.id); }}>바코드</button>
+                    <button className="primary" onClick={() => { setBarcodeReturnItemId(""); setItemNavigationIds(visibleStoreItems.map((candidate) => candidate.id)); setSelectedItemId(item.id); setView("item"); }}>입력</button>
                   </div>
                 </article>
               );
@@ -1802,7 +1816,7 @@ function App() {
       )}
 
       {view === "item" && selectedItem && (
-        <ItemEditor item={selectedItem} storeItems={storeItems} storeOperatingStatus={stores.find((store) => store.id === selectedItem.storeId)?.operatingStatus ?? ""} photos={photos.filter((photo) => photo.storeId === selectedItem.storeId)} fromBarcodeFlow={barcodeReturnItemId === selectedItem.id} onSave={saveItem} onSaved={async () => { await refresh(selectedItem.region); }} onList={(focusId) => { if (focusId) setSelectedItemId(focusId); setView("items"); }} onStoreList={() => { setFilter("전체"); setSelectedStoreId(selectedItem.storeId); setView("workspace"); }} onMove={(id) => setSelectedItemId(id)} onBarcodeReturn={returnToBarcodeModal} askConfirm={askConfirm} />
+        <ItemEditor item={selectedItem} storeItems={storeItems} navigationItems={itemNavigationItems.length ? itemNavigationItems : (visibleStoreItems.length ? visibleStoreItems : storeItems)} storeOperatingStatus={stores.find((store) => store.id === selectedItem.storeId)?.operatingStatus ?? ""} photos={photos.filter((photo) => photo.storeId === selectedItem.storeId)} fromBarcodeFlow={barcodeReturnItemId === selectedItem.id} onSave={saveItem} onSaved={async () => { await refresh(selectedItem.region); }} onList={(focusId) => { if (focusId) setSelectedItemId(focusId); setView("items"); }} onStoreList={() => { setFilter("전체"); setSelectedStoreId(selectedItem.storeId); setView("workspace"); }} onMove={(id) => setSelectedItemId(id)} onBarcodeReturn={returnToBarcodeModal} askConfirm={askConfirm} />
       )}
 
       {view === "validation" && (
@@ -2588,20 +2602,26 @@ function ItemContact({ item }: { item: SurveyItem }) {
 }
 
 function PhotoInput({ id, label, cameraLabel = "촬영", pickLabel = "선택", onFile }: { id?: string; label: string; cameraLabel?: string; pickLabel?: string; onFile: (file: File) => void | Promise<void> }) {
-  const pickId = `${id ?? uid("photo_pick")}-pick`;
-  const cameraId = `${id ?? uid("photo_camera")}-camera`;
+  const stableId = useRef(id ?? uid("photo_input"));
+  const pickId = `${stableId.current}-pick`;
+  const cameraId = `${stableId.current}-camera`;
+  const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (file) await onFile(file);
+  };
   return (
     <div className="photo-picker">
       {label && <span>{label}</span>}
       <div>
-        <label className="photo-button" htmlFor={cameraId}><Camera size={18} />{cameraLabel}<input id={cameraId} type="file" accept="image/*" capture="environment" onChange={(event) => event.target.files?.[0] && onFile(event.target.files[0])} /></label>
-        <label className="photo-button" htmlFor={pickId}><Upload size={18} />{pickLabel}<input id={pickId} type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" onChange={(event) => event.target.files?.[0] && onFile(event.target.files[0])} /></label>
+        <label className="photo-button" htmlFor={cameraId}><Camera size={18} />{cameraLabel}<input id={cameraId} type="file" accept="image/*" capture="environment" onChange={handleFile} /></label>
+        <label className="photo-button" htmlFor={pickId}><Upload size={18} />{pickLabel}<input id={pickId} type="file" accept="image/*" onChange={handleFile} /></label>
       </div>
     </div>
   );
 }
 
-function ItemEditor({ item, storeItems, storeOperatingStatus, photos, fromBarcodeFlow, onSave, onSaved, onList, onStoreList, onMove, onBarcodeReturn, askConfirm }: { item: SurveyItem; storeItems: SurveyItem[]; storeOperatingStatus: StoreOperatingStatus | ""; photos: SurveyPhoto[]; fromBarcodeFlow?: boolean; onSave: (item: SurveyItem, photoOverride?: SurveyPhoto[]) => Promise<boolean>; onSaved: () => Promise<void>; onList: (focusId?: string) => void; onStoreList: () => void; onMove: (id: string) => void; onBarcodeReturn?: (id: string) => void; askConfirm: (options: ConfirmState) => Promise<boolean> }) {
+function ItemEditor({ item, storeItems, navigationItems, storeOperatingStatus, photos, fromBarcodeFlow, onSave, onSaved, onList, onStoreList, onMove, onBarcodeReturn, askConfirm }: { item: SurveyItem; storeItems: SurveyItem[]; navigationItems: SurveyItem[]; storeOperatingStatus: StoreOperatingStatus | ""; photos: SurveyPhoto[]; fromBarcodeFlow?: boolean; onSave: (item: SurveyItem, photoOverride?: SurveyPhoto[]) => Promise<boolean>; onSaved: () => Promise<void>; onList: (focusId?: string) => void; onStoreList: () => void; onMove: (id: string) => void; onBarcodeReturn?: (id: string) => void; askConfirm: (options: ConfirmState) => Promise<boolean> }) {
   const [draft, setDraft] = useState(item);
   const [localPhotos, setLocalPhotos] = useState<SurveyPhoto[]>(photos);
   const [deletedPhotoIds, setDeletedPhotoIds] = useState<string[]>([]);
@@ -2706,14 +2726,15 @@ function ItemEditor({ item, storeItems, storeOperatingStatus, photos, fromBarcod
       setPhotoMessage("바코드 자동인식에 실패했습니다.");
     }
   };
+  const navItems = navigationItems.some((candidate) => candidate.id === draft.id) ? navigationItems : storeItems;
   const nextTodoId = () => {
-    const currentIndex = storeItems.findIndex((candidate) => candidate.id === draft.id);
-    const ordered = [...storeItems.slice(currentIndex + 1), ...storeItems.slice(0, Math.max(0, currentIndex))];
+    const currentIndex = navItems.findIndex((candidate) => candidate.id === draft.id);
+    const ordered = [...navItems.slice(currentIndex + 1), ...navItems.slice(0, Math.max(0, currentIndex))];
     return ordered.find((candidate) => candidate.id !== draft.id && candidate.status !== "완료")?.id;
   };
   const nextSequentialId = () => {
-    const currentIndex = storeItems.findIndex((candidate) => candidate.id === draft.id);
-    return storeItems[currentIndex + 1]?.id;
+    const currentIndex = navItems.findIndex((candidate) => candidate.id === draft.id);
+    return navItems[currentIndex + 1]?.id;
   };
   const appendMemo = (text: string) => {
     const parts = draft.memo.split("/").map((part) => part.trim()).filter(Boolean);

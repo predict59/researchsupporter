@@ -179,6 +179,7 @@ export async function parseSurveyWorkbook(source: Blob | ArrayBuffer): Promise<{
     items.push({
       id: uid("item"),
       itemNo: pick(row, "itemNo") || `용${String(index + 1).padStart(4, "0")}`,
+      sourceOrder: items.length,
       region: resolved.name,
       department: resolved.department,
       city: resolved.city,

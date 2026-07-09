@@ -39,6 +39,7 @@ export type SurveyStore = {
 export type SurveyItem = {
   id: string;
   itemNo: string;
+  sourceOrder?: number;
   region: string;
   department?: string;
   city?: string;
