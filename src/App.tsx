@@ -434,9 +434,12 @@ async function geocodeAddress(address: string): Promise<GeocodeResult | null> {
 
 async function resizePhoto(file: File) {
   if (!file.type.startsWith("image/")) return { blob: file, mimeType: file.type || "application/octet-stream", originalSize: file.size, resizedSize: file.size };
-  const bitmap = await createImageBitmap(file);
+  const bitmap = await loadImageBitmap(file);
   try {
-    const sourceEdge = Math.max(bitmap.width, bitmap.height);
+    const sourceWidth = "naturalWidth" in bitmap ? bitmap.naturalWidth : bitmap.width;
+    const sourceHeight = "naturalHeight" in bitmap ? bitmap.naturalHeight : bitmap.height;
+    const sourceEdge = Math.max(sourceWidth, sourceHeight);
+    if (!sourceWidth || !sourceHeight) return { blob: file, mimeType: file.type || "image/jpeg", originalSize: file.size, resizedSize: file.size };
     const edgeSteps = [PHOTO_MAX_EDGE, 1150, 1024, 900, PHOTO_MIN_EDGE].filter((edge, index, array) => edge <= sourceEdge && array.indexOf(edge) === index);
     if (!edgeSteps.length) edgeSteps.push(sourceEdge);
     const canvas = document.createElement("canvas");
@@ -445,8 +448,8 @@ async function resizePhoto(file: File) {
     let best: Blob | null = null;
     for (const maxEdge of edgeSteps) {
       const scale = Math.min(1, maxEdge / sourceEdge);
-      const width = Math.max(1, Math.round(bitmap.width * scale));
-      const height = Math.max(1, Math.round(bitmap.height * scale));
+      const width = Math.max(1, Math.round(sourceWidth * scale));
+      const height = Math.max(1, Math.round(sourceHeight * scale));
       canvas.width = width;
       canvas.height = height;
       context.clearRect(0, 0, width, height);
@@ -461,8 +464,35 @@ async function resizePhoto(file: File) {
     const output = best && best.size < file.size ? best : file;
     return { blob: output, mimeType: output.type || file.type || "image/jpeg", originalSize: file.size, resizedSize: output.size };
   } finally {
-    bitmap.close();
+    if ("close" in bitmap) bitmap.close();
   }
+}
+
+async function loadImageBitmap(file: File) {
+  if ("createImageBitmap" in window) {
+    try {
+      return await createImageBitmap(file);
+    } catch (error) {
+      console.warn("createImageBitmap failed, retrying with image element", error);
+    }
+  }
+  return imageElementToBitmap(file);
+}
+
+async function imageElementToBitmap(file: File): Promise<HTMLImageElement> {
+  const url = URL.createObjectURL(file);
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        resolve(img);
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error("이미지를 불러오지 못했습니다."));
+      };
+      img.src = url;
+    });
 }
 
 function App() {
@@ -1053,13 +1083,18 @@ function App() {
 
   async function saveStorePhoto(file: File) {
     if (!selectedStore) return;
-    if (selectedStore.frontPhotoId) await deletePhoto(selectedStore.frontPhotoId);
-    const resized = await resizePhoto(file);
-    const photo: SurveyPhoto = { id: uid("photo"), region: selectedStore.region, storeId: selectedStore.id, type: "STORE_FRONT", blob: resized.blob, originalName: file.name, mimeType: resized.mimeType, takenAt: now() };
-    const nextStore = { ...selectedStore, frontPhotoId: photo.id, operatingStatus: selectedStore.operatingStatus, status: "진행중" as const, startedAt: selectedStore.startedAt ?? now(), updatedAt: now() };
-    await putPhoto(photo);
-    await putStore(nextStore);
-    await refresh(selectedStore.region);
+    try {
+      if (selectedStore.frontPhotoId) await deletePhoto(selectedStore.frontPhotoId);
+      const resized = await resizePhoto(file);
+      const photo: SurveyPhoto = { id: uid("photo"), region: selectedStore.region, storeId: selectedStore.id, type: "STORE_FRONT", blob: resized.blob, originalName: file.name, mimeType: resized.mimeType, takenAt: now() };
+      const nextStore = { ...selectedStore, frontPhotoId: photo.id, operatingStatus: selectedStore.operatingStatus, status: "진행중" as const, startedAt: selectedStore.startedAt ?? now(), updatedAt: now() };
+      await putPhoto(photo);
+      await putStore(nextStore);
+      await refresh(selectedStore.region);
+    } catch (error) {
+      console.error(error);
+      alert("사진을 처리하지 못했습니다. 다른 사진을 선택하거나 카메라 설정을 확인해 주세요.");
+    }
   }
 
   async function useExistingStorePhoto(source: SurveyPhoto) {
@@ -1758,7 +1793,10 @@ function App() {
             </section>
             <section className="panel store-survey-panel">
               <h2>조사 입력</h2>
-              <p>조사 품목: {storeItems.length.toLocaleString()}건</p>
+              <div className="store-operating store-survey-count">
+                <span>조사 품목</span>
+                <strong>{storeItems.length.toLocaleString()}건</strong>
+              </div>
               <label className="store-date-row"><input type="date" value={selectedStore.surveyDate} onChange={async (event) => { await putStore({ ...selectedStore, surveyDate: event.target.value, updatedAt: now() }); await refresh(selectedStore.region); }} /></label>
               <button className="primary sticky-lite" onClick={() => selectedStore.operatingStatus ? (setItemQuery(""), setItemsReturnView("store"), setView("items")) : alert("매장 상태를 먼저 설정해 주세요.")}>조사 입력</button>
             </section>
@@ -2683,7 +2721,14 @@ function ItemEditor({ item, storeItems, navigationItems, storeOperatingStatus, p
     }
   };
   const upload = async (type: PhotoType, file: File) => {
-    const resized = await resizePhoto(file);
+    let resized: Awaited<ReturnType<typeof resizePhoto>>;
+    try {
+      resized = await resizePhoto(file);
+    } catch (error) {
+      console.error(error);
+      setPhotoMessage("사진을 처리하지 못했습니다. 다른 사진을 선택하거나 카메라 설정을 확인해 주세요.");
+      return;
+    }
     const oldPhotos = localPhotos.filter((photo) => photo.itemId === draft.id && photo.type === type);
     setDeletedPhotoIds((old) => [...old, ...oldPhotos.filter((photo) => !photo.id.startsWith("temp_")).map((photo) => photo.id)]);
     const photo: SurveyPhoto = { id: uid("temp_photo"), region: draft.region, storeId: draft.storeId, itemId: draft.id, type, blob: resized.blob, originalName: file.name, mimeType: resized.mimeType, takenAt: now() };

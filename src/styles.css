@@ -1176,6 +1176,7 @@ textarea { min-height: 110px; resize: vertical; }
   width: 100%;
   min-width: 0;
   min-height: 44px;
+  height: 44px;
   padding-inline: 14px;
 }
 .store-status-message {
@@ -1261,7 +1262,7 @@ textarea { min-height: 110px; resize: vertical; }
 }
 .store-date-row {
   display: block;
-  margin-bottom: 14px;
+  margin: 12px 0 8px;
 }
 .store-date-row span {
   color: #64748b;
@@ -1272,6 +1273,8 @@ textarea { min-height: 110px; resize: vertical; }
 .store-date-row input {
   width: 100%;
   min-width: 0;
+  min-height: 44px;
+  height: 44px;
   font-size: 13px;
   padding-left: 10px;
   padding-right: 10px;
@@ -1288,6 +1291,15 @@ textarea { min-height: 110px; resize: vertical; }
 .store-survey-panel {
   display: grid;
   align-content: start;
+}
+.store-survey-count strong {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 900;
+}
+.store-survey-panel .sticky-lite {
+  min-height: 44px;
+  height: 44px;
 }
 .meta-label {
   color: #64748b;
