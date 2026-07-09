@@ -63,6 +63,17 @@ export function mapSearchAddress(address: string) {
   return address.replace(/\s+/g, " ").trim();
 }
 
+function isInAppBrowser() {
+  return /KAKAOTALK|FBAN|FBAV|Instagram|Line\//i.test(navigator.userAgent);
+}
+
+function showInAppDownloadNotice(filename: string, openedFallback = false) {
+  if (!isInAppBrowser()) return;
+  window.setTimeout(() => {
+    window.alert(`${filename}\n\n카카오톡 같은 인앱 브라우저에서는 파일 저장이 막힐 수 있습니다.${openedFallback ? "\n새로 열린 파일 화면에서 공유 또는 저장을 시도해 주세요." : "\n공유/저장 화면이 뜨지 않으면 다시 한 번 내려받기를 눌러 주세요."}`);
+  }, 350);
+}
+
 export async function downloadBlob(blob: Blob, filename: string) {
   const file = new File([blob], filename, { type: blob.type || "application/octet-stream" });
   const shareTarget = navigator as Navigator & {
@@ -86,8 +97,10 @@ export async function downloadBlob(blob: Blob, filename: string) {
   anchor.style.display = "none";
   document.body.appendChild(anchor);
   anchor.click();
+  const openedFallback = isInAppBrowser() ? Boolean(window.open(url, "_blank", "noopener,noreferrer")) : false;
+  showInAppDownloadNotice(filename, openedFallback);
   setTimeout(() => {
     anchor.remove();
     URL.revokeObjectURL(url);
-  }, 30000);
+  }, isInAppBrowser() ? 180000 : 30000);
 }
