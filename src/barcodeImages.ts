@@ -6,11 +6,19 @@ const clean = (value: unknown) => String(value ?? "").trim();
 type BarcodeRow = {
   excelRow: number;
   itemNo: string;
+  barcode: string;
+  productImageUrl: string;
 };
 
 type BarcodeSheetMap = {
   rows: BarcodeRow[];
   imageColumn: number;
+};
+
+export type BarcodeWorkbookData = {
+  barcodeImages: Record<string, string>;
+  productImagesByItemNo: Record<string, string>;
+  productImagesByBarcode: Record<string, string>;
 };
 
 const mimeFromPath = (path: string) => {
@@ -83,19 +91,27 @@ function barcodeRowsFromSheet(sheet: XLSX.WorkSheet): BarcodeSheetMap | null {
   const itemNoColumn = headers.findIndex((header) => header === "순번");
   const barcodeColumn = headers.findIndex((header) => header === "바코드");
   const imageColumn = headers.findIndex((header) => header === "바코드 이미지");
+  const productImageColumn = headers.findIndex((header) => ["썸네일링크", "상품이미지미리보기링크", "미리보기링크", "상품이미지링크", "이미지링크"].includes(header));
   if (itemNoColumn === -1 || barcodeColumn === -1 || imageColumn === -1) return null;
   const rows = matrix
     .slice(headerIndex + 1)
-    .map((row, index) => ({ excelRow: headerIndex + index + 2, itemNo: clean(row[itemNoColumn]) }))
+    .map((row, index) => ({
+      excelRow: headerIndex + index + 2,
+      itemNo: clean(row[itemNoColumn]),
+      barcode: clean(row[barcodeColumn]).replace(/\.0$/, ""),
+      productImageUrl: productImageColumn === -1 ? "" : clean(row[productImageColumn]),
+    }))
     .filter((row) => row.itemNo);
   return { rows, imageColumn: imageColumn + 1 };
 }
 
-export async function extractBarcodeImages(source: Blob | ArrayBuffer) {
+export async function extractBarcodeWorkbookData(source: Blob | ArrayBuffer): Promise<BarcodeWorkbookData> {
   const buffer = source instanceof Blob ? await source.arrayBuffer() : source;
   const workbook = XLSX.read(buffer, { type: "array" });
   const zip = await JSZip.loadAsync(buffer);
-  const index: Record<string, string> = {};
+  const barcodeImages: Record<string, string> = {};
+  const productImagesByItemNo: Record<string, string> = {};
+  const productImagesByBarcode: Record<string, string> = {};
   const workbookXml = await zip.file("xl/workbook.xml")?.async("string");
   const workbookRelsXml = await zip.file("xl/_rels/workbook.xml.rels")?.async("string");
   const sheetPathByName = workbookXml && workbookRelsXml ? workbookSheetPaths(workbookXml, workbookRelsXml) : new Map<string, string>();
@@ -104,6 +120,10 @@ export async function extractBarcodeImages(source: Blob | ArrayBuffer) {
     const barcodeSheet = barcodeRowsFromSheet(workbook.Sheets[sheetName]);
     if (!barcodeSheet?.rows.length) continue;
     const itemNoByRow = new Map(barcodeSheet.rows.map((row) => [row.excelRow, row.itemNo]));
+    barcodeSheet.rows.forEach((row) => {
+      if (row.productImageUrl && !productImagesByItemNo[row.itemNo]) productImagesByItemNo[row.itemNo] = row.productImageUrl;
+      if (row.productImageUrl && row.barcode && !productImagesByBarcode[row.barcode]) productImagesByBarcode[row.barcode] = row.productImageUrl;
+    });
 
     const sheetPath = sheetPathByName.get(sheetName) ?? `xl/worksheets/sheet${sheetIndex + 1}.xml`;
     const sheetXml = await zip.file(sheetPath)?.async("string");
@@ -140,16 +160,20 @@ export async function extractBarcodeImages(source: Blob | ArrayBuffer) {
       const anchorColumn = Number(colText) + 1;
       if (!Number.isFinite(anchorRow) || anchorColumn !== barcodeSheet.imageColumn) continue;
       const itemNo = itemNoByRow.get(anchorRow) ?? "";
-      if (!itemNo || index[itemNo]) continue;
+      if (!itemNo || barcodeImages[itemNo]) continue;
       const blip = anchor.getElementsByTagName("a:blip")[0] ?? anchor.getElementsByTagName("blip")[0];
       const imageRid = blip?.getAttribute("r:embed") ?? blip?.getAttribute("embed");
       const imagePath = imageRid ? drawingRels.get(imageRid) : "";
       if (!imagePath) continue;
       const imageBuffer = await zip.file(imagePath)?.async("arraybuffer");
       if (!imageBuffer) continue;
-      index[itemNo] = arrayBufferToDataUrl(imageBuffer, mimeFromPath(imagePath));
+      barcodeImages[itemNo] = arrayBufferToDataUrl(imageBuffer, mimeFromPath(imagePath));
     }
   }
 
-  return index;
+  return { barcodeImages, productImagesByItemNo, productImagesByBarcode };
+}
+
+export async function extractBarcodeImages(source: Blob | ArrayBuffer) {
+  return (await extractBarcodeWorkbookData(source)).barcodeImages;
 }

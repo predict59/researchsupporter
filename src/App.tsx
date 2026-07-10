@@ -2,7 +2,7 @@ import { Camera, CheckCircle2, ChevronDown, ChevronUp, Download, Menu, MoreVerti
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { clearAllData, deletePhoto, getBarcodeIndex, getItems, getPhotos, getPhotosByRegion, getPhotosByStore, getRegions, getSettings, getStores, importAllData, importRegionData, now, putItem, putPhoto, putStore, saveBarcodeIndex, saveParsedData, saveSettings, today, uid } from "./db";
-import { extractBarcodeImages } from "./barcodeImages";
+import { extractBarcodeWorkbookData } from "./barcodeImages";
 import { parseContactRows, parseSurveyWorkbook, mergeContacts, rebuildStoresAndRegions } from "./excel";
 import { dataUrlToBlob, exportBackup, exportRegionExcel, exportRegionZip } from "./exporters";
 import { mapSearchAddress, requiredPhotoLabels, summarize } from "./logic";
@@ -956,16 +956,26 @@ function App() {
       });
       let nextBarcodeIndex: BarcodeImageIndex = {};
       let extractedBarcodes = 0;
+      let extractedProductImages = 0;
       if (barcodeFile) {
         setUploadMessage("바코드 이미지를 추출하고 있습니다.");
-        nextBarcodeIndex = await extractBarcodeImages(barcodeFile);
+        const barcodeData = await extractBarcodeWorkbookData(barcodeFile);
+        nextBarcodeIndex = barcodeData.barcodeImages;
         extractedBarcodes = Object.keys(nextBarcodeIndex).length;
+        parsedItems = parsedItems.map((item) => {
+          const productImageUrl = item.productImageUrl
+            || barcodeData.productImagesByItemNo[item.itemNo]
+            || barcodeData.productImagesByBarcode[item.barcode]
+            || "";
+          if (productImageUrl && productImageUrl !== item.productImageUrl) extractedProductImages += 1;
+          return productImageUrl ? { ...item, productImageUrl } : item;
+        });
       }
       await clearAllData();
       await saveParsedData(rebuilt.regions, parsedStores, parsedItems);
       await saveBarcodeIndex(nextBarcodeIndex);
       setBarcodeIndex(nextBarcodeIndex);
-      setUploadMessage(`분석 완료: 전체 품목 ${parsedItems.length.toLocaleString()}개 / 지역 ${rebuilt.regions.length}개 / 매장 ${parsedStores.length}개 / 연락처 매칭 ${Math.max(0, matched)}개 / 바코드 이미지 ${extractedBarcodes.toLocaleString()}개`);
+      setUploadMessage(`분석 완료: 전체 품목 ${parsedItems.length.toLocaleString()}개 / 지역 ${rebuilt.regions.length}개 / 매장 ${parsedStores.length}개 / 연락처 매칭 ${Math.max(0, matched)}개 / 바코드 이미지 ${extractedBarcodes.toLocaleString()}개 / 상품 이미지 ${extractedProductImages.toLocaleString()}개`);
       await refresh(undefined);
       setView("regions");
     } catch (error) {
@@ -1841,21 +1851,23 @@ function App() {
               return (
                 <article id={`item-card-${item.id}`} className={`card compact item-card ${selectedItemId === item.id ? "focused" : ""} ${item.status === "완료" ? "completed" : ""}`} key={item.id}>
                   <div className="item-card-head"><h2 className="item-title"><span className="item-code">{item.itemNo}</span><span>{item.productName}</span><a className="image-search-button" href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(item.productName)}`} target="_blank" aria-label={`${item.productName} 이미지 검색`} onClick={(event) => event.stopPropagation()}><Search size={15} /></a></h2><div className="item-badge-stack">{item.status !== "완료" && <Badge text={item.status} />}{itemPhotoMissing && <span className="badge badge-photo-missing">사진누락</span>}</div></div>
-                  <div className={`item-card-body ${(productImage || barcodeImage) ? "" : "no-thumb"}`}>
-                    {(productImage || barcodeImage) && (
-                      <div className="item-reference-images">
-                        <ReferenceImage src={productImage} label="상품" />
-                        <ReferenceImage src={barcodeImage} label="바코드" barcode />
-                      </div>
-                    )}
-                    <dl className="item-mini-info">
-                      <dt>기준가격</dt><dd>{item.basePrice?.toLocaleString() ?? "-"}원</dd>
-                      <dt>조사가격</dt><dd>{item.normalPrice?.toLocaleString() ?? "-"}원 {eligibility && <span className={`eligibility-badge ${eligibility.label === "부적격" ? "bad" : "good"}`} title={eligibility.reason}>{eligibility.label}</span>}</dd>
-                    </dl>
-                  </div>
-                  <div className="item-card-actions">
-                    <button type="button" onClick={() => { setItemNavigationIds(visibleStoreItems.map((candidate) => candidate.id)); setBarcodeModalItemId(item.id); }}>바코드</button>
-                    <button className="primary" onClick={() => { setBarcodeReturnItemId(""); setItemNavigationIds(visibleStoreItems.map((candidate) => candidate.id)); setSelectedItemId(item.id); setView("item"); }}>입력</button>
+                  <div className="item-card-body">
+                    <div className="item-reference-images">
+                      <ReferenceImage src={productImage} label="상품사진" />
+                      <ReferenceImage
+                        src={barcodeImage}
+                        label="바코드사진"
+                        barcode
+                        onClick={() => { setItemNavigationIds(visibleStoreItems.map((candidate) => candidate.id)); setBarcodeModalItemId(item.id); }}
+                      />
+                    </div>
+                    <div className="item-card-lower">
+                      <dl className="item-mini-info">
+                        <dt>기준가격</dt><dd>{item.basePrice?.toLocaleString() ?? "-"}원</dd>
+                        <dt>조사가격</dt><dd>{item.normalPrice?.toLocaleString() ?? "-"}원 {eligibility && <span className={`eligibility-badge ${eligibility.label === "부적격" ? "bad" : "good"}`} title={eligibility.reason}>{eligibility.label}</span>}</dd>
+                      </dl>
+                      <button className="primary item-input-button" onClick={() => { setBarcodeReturnItemId(""); setItemNavigationIds(visibleStoreItems.map((candidate) => candidate.id)); setSelectedItemId(item.id); setView("item"); }}>입력</button>
+                    </div>
                   </div>
                 </article>
               );
@@ -2016,15 +2028,13 @@ function PhotoPreview({ photo, className = "" }: { photo?: SurveyPhoto; classNam
   return <img className={`photo-preview ${className}`} src={url} alt="업로드 사진 미리보기" loading="lazy" />;
 }
 
-function ReferenceImage({ src, label, barcode = false }: { src?: string; label: string; barcode?: boolean }) {
+function ReferenceImage({ src, label, barcode = false, onClick }: { src?: string; label: string; barcode?: boolean; onClick?: () => void }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [src]);
-  if (!src || failed) return null;
-  return (
-    <div className={`reference-image ${barcode ? "barcode-reference" : ""}`}>
-      <img src={src} alt={`${label} 이미지`} loading="lazy" onError={() => setFailed(true)} />
-    </div>
-  );
+  const empty = !src || failed;
+  const className = `reference-image ${barcode ? "barcode-reference" : ""} ${empty ? "empty" : ""} ${onClick ? "clickable" : ""}`;
+  const body = empty ? <span>{label}</span> : <img src={src} alt={label} loading="lazy" onError={() => setFailed(true)} />;
+  return onClick ? <button type="button" className={className} onClick={onClick}>{body}</button> : <div className={className}>{body}</div>;
 }
 
 function StoreFrontPhotoPicker({ photos, stores, onSelect, onClose }: { photos: SurveyPhoto[]; stores: SurveyStore[]; onSelect: (photo: SurveyPhoto) => void | Promise<void>; onClose: () => void }) {
