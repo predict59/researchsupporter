@@ -53,6 +53,7 @@ export type SurveyItem = {
   martName: string;
   martTel?: string;
   barcode: string;
+  productImageUrl?: string;
   productName: string;
   spec: string;
   basePrice: number | null;

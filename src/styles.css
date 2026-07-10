@@ -192,9 +192,16 @@ h2 { font-size: 18px; margin: 0 0 10px; letter-spacing: 0; }
 }
 .item-title {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
+  min-width: 0;
+}
+.item-title > span:not(.item-code) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .image-search-button {
   width: 28px;
@@ -215,7 +222,7 @@ h2 { font-size: 18px; margin: 0 0 10px; letter-spacing: 0; }
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: start;
-  gap: 10px;
+  gap: 8px;
 }
 .item-card-head .badge {
   justify-self: end;
@@ -237,6 +244,10 @@ h2 { font-size: 18px; margin: 0 0 10px; letter-spacing: 0; }
   border-color: #34d399;
   background: linear-gradient(0deg, #ecfdf5, #fff 52%);
   box-shadow: inset 4px 0 0 #10b981;
+}
+.item-card {
+  padding: 11px 12px;
+  gap: 7px;
 }
 .item-code {
   display: inline-flex;
@@ -1310,18 +1321,43 @@ textarea { min-height: 110px; resize: vertical; }
 .item-card-body {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 12px;
+  gap: 10px;
   align-items: center;
 }
 .item-card-body.no-thumb {
   grid-template-columns: 1fr;
 }
+.item-reference-images {
+  display: grid;
+  grid-template-columns: repeat(2, 54px);
+  gap: 6px;
+  align-items: stretch;
+}
+.reference-image {
+  width: 54px;
+  height: 58px;
+  border: 1px solid #dbe1e5;
+  border-radius: 7px;
+  background: #f8fafc;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+.reference-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.barcode-reference {
+  background: #fff;
+}
 .item-mini-info {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
-  gap: 4px 8px;
+  grid-template-columns: 62px minmax(0, 1fr);
+  gap: 3px 7px;
   margin: 0;
-  font-size: 13px;
+  font-size: 12.5px;
 }
 .item-mini-info dt {
   color: #64748b;
@@ -1341,7 +1377,11 @@ textarea { min-height: 110px; resize: vertical; }
 .item-card-actions {
   display: grid;
   grid-template-columns: minmax(0, .72fr) minmax(0, 1fr);
-  gap: 8px;
+  gap: 7px;
+}
+.item-card-actions button {
+  min-height: 38px;
+  padding: 8px 10px;
 }
 .eligibility-badge {
   display: inline-flex;

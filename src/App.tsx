@@ -193,6 +193,12 @@ const barcodeImageSrc = (item: SurveyItem, index: BarcodeImageIndex) => {
   if (!path) return "";
   return path.startsWith("data:") ? path : `${import.meta.env.BASE_URL}${path}`;
 };
+const linkedImageSrc = (url?: string) => {
+  const value = (url ?? "").trim();
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value) || value.startsWith("data:")) return value;
+  return `${import.meta.env.BASE_URL}${value.replace(/^\/+/, "")}`;
+};
 let priceOcrWorkerPromise: Promise<PriceOcrWorker> | null = null;
 
 function barcodeScanRegions(width: number, height: number) {
@@ -1828,16 +1834,21 @@ function App() {
           )}
           <div className="list">
             {visibleStoreItems.map((item) => {
-              const previewPhoto = photos.find((photo) => photo.itemId === item.id && ["PRODUCT_DISPLAY", "PRODUCT_INFO_BARCODE", "POS_RECEIPT"].includes(photo.type));
               const eligibility = getPriceEligibility(item);
               const itemPhotoMissing = item.status === "완료" && requiredPhotoLabels(item, photos.filter((photo) => photo.storeId === item.storeId)).length > 0;
+              const productImage = linkedImageSrc(item.productImageUrl);
+              const barcodeImage = barcodeImageSrc(item, barcodeIndex);
               return (
                 <article id={`item-card-${item.id}`} className={`card compact item-card ${selectedItemId === item.id ? "focused" : ""} ${item.status === "완료" ? "completed" : ""}`} key={item.id}>
                   <div className="item-card-head"><h2 className="item-title"><span className="item-code">{item.itemNo}</span><span>{item.productName}</span><a className="image-search-button" href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(item.productName)}`} target="_blank" aria-label={`${item.productName} 이미지 검색`} onClick={(event) => event.stopPropagation()}><Search size={15} /></a></h2><div className="item-badge-stack">{item.status !== "완료" && <Badge text={item.status} />}{itemPhotoMissing && <span className="badge badge-photo-missing">사진누락</span>}</div></div>
-                  <div className={`item-card-body ${previewPhoto ? "" : "no-thumb"}`}>
-                    <PhotoPreview photo={previewPhoto} className="item-thumb" />
+                  <div className={`item-card-body ${(productImage || barcodeImage) ? "" : "no-thumb"}`}>
+                    {(productImage || barcodeImage) && (
+                      <div className="item-reference-images">
+                        <ReferenceImage src={productImage} label="상품" />
+                        <ReferenceImage src={barcodeImage} label="바코드" barcode />
+                      </div>
+                    )}
                     <dl className="item-mini-info">
-                      <dt>바코드</dt><dd>{item.barcode || "-"}</dd>
                       <dt>기준가격</dt><dd>{item.basePrice?.toLocaleString() ?? "-"}원</dd>
                       <dt>조사가격</dt><dd>{item.normalPrice?.toLocaleString() ?? "-"}원 {eligibility && <span className={`eligibility-badge ${eligibility.label === "부적격" ? "bad" : "good"}`} title={eligibility.reason}>{eligibility.label}</span>}</dd>
                     </dl>
@@ -2003,6 +2014,17 @@ function PhotoPreview({ photo, className = "" }: { photo?: SurveyPhoto; classNam
   }, [photo?.id]);
   if (!photo || !url) return null;
   return <img className={`photo-preview ${className}`} src={url} alt="업로드 사진 미리보기" loading="lazy" />;
+}
+
+function ReferenceImage({ src, label, barcode = false }: { src?: string; label: string; barcode?: boolean }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [src]);
+  if (!src || failed) return null;
+  return (
+    <div className={`reference-image ${barcode ? "barcode-reference" : ""}`}>
+      <img src={src} alt={`${label} 이미지`} loading="lazy" onError={() => setFailed(true)} />
+    </div>
+  );
 }
 
 function StoreFrontPhotoPicker({ photos, stores, onSelect, onClose }: { photos: SurveyPhoto[]; stores: SurveyStore[]; onSelect: (photo: SurveyPhoto) => void | Promise<void>; onClose: () => void }) {
