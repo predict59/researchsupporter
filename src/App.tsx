@@ -521,6 +521,7 @@ function App() {
   const [barcodeIndex, setBarcodeIndex] = useState<BarcodeImageIndex>({});
   const [barcodeModalItemId, setBarcodeModalItemId] = useState("");
   const [barcodeReturnItemId, setBarcodeReturnItemId] = useState("");
+  const [imagePreview, setImagePreview] = useState<{ src: string; title: string } | null>(null);
   const [surveyFile, setSurveyFile] = useState<File | null>(null);
   const [contactFile, setContactFile] = useState<File | null>(null);
   const [barcodeFile, setBarcodeFile] = useState<File | null>(null);
@@ -1853,7 +1854,11 @@ function App() {
                   <div className="item-card-head"><h2 className="item-title"><span className="item-code">{item.itemNo}</span><span>{item.productName}</span><a className="image-search-button" href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(item.productName)}`} target="_blank" aria-label={`${item.productName} 이미지 검색`} onClick={(event) => event.stopPropagation()}><Search size={15} /></a></h2><div className="item-badge-stack">{item.status !== "완료" && <Badge text={item.status} />}{itemPhotoMissing && <span className="badge badge-photo-missing">사진누락</span>}</div></div>
                   <div className="item-card-body">
                     <div className="item-reference-images">
-                      <ReferenceImage src={productImage} label="상품사진" />
+                      <ReferenceImage
+                        src={productImage}
+                        label="상품사진"
+                        onClick={productImage ? () => setImagePreview({ src: productImage, title: `${item.itemNo} ${item.productName}` }) : undefined}
+                      />
                       <ReferenceImage
                         src={barcodeImage}
                         label="바코드사진"
@@ -1924,6 +1929,7 @@ function App() {
           onClose={() => setBarcodeModalItemId("")}
         />
       )}
+      {imagePreview && <ImagePreviewModal image={imagePreview} onClose={() => setImagePreview(null)} />}
       {contactStoreId && (
         <ContactModal
           store={stores.find((store) => store.id === contactStoreId)}
@@ -2035,6 +2041,25 @@ function ReferenceImage({ src, label, barcode = false, onClick }: { src?: string
   const className = `reference-image ${barcode ? "barcode-reference" : ""} ${empty ? "empty" : ""} ${onClick ? "clickable" : ""}`;
   const body = empty ? <span>{label}</span> : <img src={src} alt={label} loading="lazy" onError={() => setFailed(true)} />;
   return onClick ? <button type="button" className={className} onClick={onClick}>{body}</button> : <div className={className}>{body}</div>;
+}
+
+function ImagePreviewModal({ image, onClose }: { image: { src: string; title: string }; onClose: () => void }) {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true">
+      <section className="modal image-preview-modal">
+        <div className="modal-head">
+          <div>
+            <h2>상품사진</h2>
+            <p>{image.title}</p>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="닫기"><X size={18} /></button>
+        </div>
+        <div className="image-preview-frame">
+          <img src={image.src} alt={image.title} />
+        </div>
+      </section>
+    </div>
+  );
 }
 
 function StoreFrontPhotoPicker({ photos, stores, onSelect, onClose }: { photos: SurveyPhoto[]; stores: SurveyStore[]; onSelect: (photo: SurveyPhoto) => void | Promise<void>; onClose: () => void }) {
