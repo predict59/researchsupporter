@@ -2,7 +2,7 @@ import { Camera, CheckCircle2, ChevronDown, ChevronUp, Download, Menu, MoreVerti
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { clearAllData, deletePhoto, getBarcodeIndex, getItems, getPhotos, getPhotosByRegion, getPhotosByStore, getRegions, getSettings, getStores, importAllData, importRegionData, now, putItem, putPhoto, putStore, saveBarcodeIndex, saveParsedData, saveSettings, today, uid } from "./db";
-import { extractBarcodeImages, extractBarcodeWorkbookData } from "./barcodeImages";
+import { extractBarcodeImages, extractProductImageReferences } from "./barcodeImages";
 import type { ProductImageReference } from "./barcodeImages";
 import { parseContactRows, parseSurveyWorkbook, mergeContacts, rebuildStoresAndRegions } from "./excel";
 import { dataUrlToBlob, exportBackup, exportRegionExcel, exportRegionZip } from "./exporters";
@@ -685,7 +685,7 @@ function App() {
         if (!response.ok) throw new Error(`product image reference file not found: ${response.status}`);
         return response.arrayBuffer();
       })
-      .then((buffer) => extractBarcodeWorkbookData(buffer))
+      .then((buffer) => extractProductImageReferences(buffer))
       .then((data) => {
         if (cancelled) return;
         setReferenceProductImages({

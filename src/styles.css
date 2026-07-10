@@ -1332,8 +1332,9 @@ textarea { min-height: 110px; resize: vertical; }
   align-items: stretch;
 }
 .reference-image {
-  width: 100%;
+  width: var(--reference-image-size);
   height: var(--reference-image-size);
+  aspect-ratio: 1 / 1;
   padding: 3px;
   border: 1px solid #dbe1e5;
   border-radius: 7px;
@@ -1352,6 +1353,7 @@ textarea { min-height: 110px; resize: vertical; }
   display: block;
 }
 .barcode-reference {
+  width: 100%;
   background: #fff;
   aspect-ratio: auto;
 }

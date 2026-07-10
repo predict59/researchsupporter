@@ -27,6 +27,46 @@ export type ProductImageReference = {
   originalUrl: string;
 };
 
+const findHeaderIndex = (headers: string[], candidates: string[]) =>
+  headers.findIndex((header) => candidates.some((candidate) => header === candidate || header.includes(candidate)));
+
+export async function extractProductImageReferences(source: Blob | ArrayBuffer) {
+  const buffer = source instanceof Blob ? await source.arrayBuffer() : source;
+  const workbook = XLSX.read(buffer, { type: "array" });
+  const productImagesByItemNo: Record<string, ProductImageReference> = {};
+  const productImagesByBarcode: Record<string, ProductImageReference> = {};
+
+  workbook.SheetNames.forEach((sheetName) => {
+    const matrix = XLSX.utils.sheet_to_json<unknown[]>(workbook.Sheets[sheetName], { header: 1, defval: "" });
+    const headerIndex = matrix.findIndex((row) => {
+      const values = row.map(clean);
+      return values.some((value) => value === "순번" || value.includes("순번"))
+        && values.some((value) => value === "바코드" || value.includes("바코드"))
+        && values.some((value) => value.includes("썸네일") || value.includes("이미지원본") || value.includes("이미지링크"));
+    });
+    if (headerIndex === -1) return;
+    const headers = matrix[headerIndex].map(clean);
+    const itemNoColumn = findHeaderIndex(headers, ["순번", "물품코드", "품목코드"]);
+    const barcodeColumn = findHeaderIndex(headers, ["바코드"]);
+    const thumbColumn = findHeaderIndex(headers, ["썸네일링크", "상품이미지미리보기링크", "미리보기링크", "thumbnail"]);
+    const originalColumn = findHeaderIndex(headers, ["이미지원본링크", "원본이미지링크", "상품이미지원본링크", "상품이미지링크", "이미지링크"]);
+    if (itemNoColumn === -1 || barcodeColumn === -1 || (thumbColumn === -1 && originalColumn === -1)) return;
+
+    matrix.slice(headerIndex + 1).forEach((row) => {
+      const itemNo = clean(row[itemNoColumn]);
+      const barcode = clean(row[barcodeColumn]).replace(/\.0$/, "");
+      const thumbUrl = thumbColumn === -1 ? "" : clean(row[thumbColumn]);
+      const originalUrl = originalColumn === -1 ? "" : clean(row[originalColumn]);
+      if (!itemNo || (!thumbUrl && !originalUrl)) return;
+      const image = { thumbUrl: thumbUrl || originalUrl, originalUrl: originalUrl || thumbUrl };
+      if (!productImagesByItemNo[itemNo]) productImagesByItemNo[itemNo] = image;
+      if (barcode && !productImagesByBarcode[barcode]) productImagesByBarcode[barcode] = image;
+    });
+  });
+
+  return { productImagesByItemNo, productImagesByBarcode };
+}
+
 const mimeFromPath = (path: string) => {
   const lower = path.toLowerCase();
   if (lower.endsWith(".png")) return "image/png";
