@@ -91,7 +91,7 @@ function barcodeRowsFromSheet(sheet: XLSX.WorkSheet): BarcodeSheetMap | null {
   const itemNoColumn = headers.findIndex((header) => header === "순번");
   const barcodeColumn = headers.findIndex((header) => header === "바코드");
   const imageColumn = headers.findIndex((header) => header === "바코드 이미지");
-  const productImageColumn = headers.findIndex((header) => ["썸네일링크", "상품이미지미리보기링크", "미리보기링크", "상품이미지링크", "이미지링크"].includes(header));
+  const productImageColumn = headers.findIndex((header) => ["이미지원본링크", "원본이미지링크", "상품이미지원본링크", "썸네일링크", "상품이미지미리보기링크", "미리보기링크", "상품이미지링크", "이미지링크"].includes(header));
   if (itemNoColumn === -1 || barcodeColumn === -1 || (imageColumn === -1 && productImageColumn === -1)) return null;
   const rows = matrix
     .slice(headerIndex + 1)
