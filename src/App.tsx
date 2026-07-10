@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { clearAllData, deletePhoto, getBarcodeIndex, getItems, getPhotos, getPhotosByRegion, getPhotosByStore, getRegions, getSettings, getStores, importAllData, importRegionData, now, putItem, putPhoto, putStore, saveBarcodeIndex, saveParsedData, saveSettings, today, uid } from "./db";
 import { extractBarcodeImages, extractBarcodeWorkbookData } from "./barcodeImages";
+import type { ProductImageReference } from "./barcodeImages";
 import { parseContactRows, parseSurveyWorkbook, mergeContacts, rebuildStoresAndRegions } from "./excel";
 import { dataUrlToBlob, exportBackup, exportRegionExcel, exportRegionZip } from "./exporters";
 import { mapSearchAddress, requiredPhotoLabels, summarize } from "./logic";
@@ -113,7 +114,7 @@ const PRICE_DIFF_WARN_PERCENT = 30;
 const TARGET_MAP_URL = "https://www.google.com/maps/d/u/1/edit?mid=1ej99Lo6WS4GROBCQPr0a66MhQR_vXuM&usp=sharing";
 const PRODUCT_IMAGE_REFERENCE_FILE = `${import.meta.env.BASE_URL}data/barcode_product_reference.xlsx`;
 type BarcodeImageIndex = Record<string, string>;
-type ProductImageReference = { byItemNo: Record<string, string>; byBarcode: Record<string, string> };
+type ProductImageReferenceIndex = { byItemNo: Record<string, ProductImageReference>; byBarcode: Record<string, ProductImageReference> };
 type PriceCandidate = { value: number; score: number; source: "comma" | "plain" };
 type PriceOcrWorker = Awaited<ReturnType<typeof import("tesseract.js")["createWorker"]>>;
 const PRICE_KEYWORDS = /원|가격|정상|판매|할인|행사|특가|세일|SALE|sale|올리브|카드|멤버십|회원|쿠폰/;
@@ -521,7 +522,7 @@ function App() {
   const [itemQuery, setItemQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("전체");
   const [barcodeIndex, setBarcodeIndex] = useState<BarcodeImageIndex>({});
-  const [referenceProductImages, setReferenceProductImages] = useState<ProductImageReference>({ byItemNo: {}, byBarcode: {} });
+  const [referenceProductImages, setReferenceProductImages] = useState<ProductImageReferenceIndex>({ byItemNo: {}, byBarcode: {} });
   const [barcodeModalItemId, setBarcodeModalItemId] = useState("");
   const [barcodeReturnItemId, setBarcodeReturnItemId] = useState("");
   const [imagePreview, setImagePreview] = useState<{ src: string; title: string } | null>(null);
@@ -1862,7 +1863,9 @@ function App() {
             {visibleStoreItems.map((item) => {
               const eligibility = getPriceEligibility(item);
               const itemPhotoMissing = item.status === "완료" && requiredPhotoLabels(item, photos.filter((photo) => photo.storeId === item.storeId)).length > 0;
-              const productImage = linkedImageSrc(referenceProductImages.byItemNo[item.itemNo] || referenceProductImages.byBarcode[item.barcode] || item.productImageUrl);
+              const productReference = referenceProductImages.byItemNo[item.itemNo] || referenceProductImages.byBarcode[item.barcode];
+              const productThumbImage = linkedImageSrc(productReference?.thumbUrl || item.productImageUrl);
+              const productOriginalImage = linkedImageSrc(productReference?.originalUrl || productReference?.thumbUrl || item.productImageUrl);
               const barcodeImage = barcodeImageSrc(item, barcodeIndex);
               return (
                 <article id={`item-card-${item.id}`} className={`card compact item-card ${selectedItemId === item.id ? "focused" : ""} ${item.status === "완료" ? "completed" : ""}`} key={item.id}>
@@ -1870,9 +1873,9 @@ function App() {
                   <div className="item-card-body">
                     <div className="item-reference-images">
                       <ReferenceImage
-                        src={productImage}
+                        src={productThumbImage}
                         label="상품사진"
-                        onClick={productImage ? () => setImagePreview({ src: productImage, title: `${item.itemNo} ${item.productName}` }) : undefined}
+                        onClick={productOriginalImage ? () => setImagePreview({ src: productOriginalImage, title: `${item.itemNo} ${item.productName}` }) : undefined}
                       />
                       <ReferenceImage
                         src={barcodeImage}

@@ -1325,14 +1325,15 @@ textarea { min-height: 110px; resize: vertical; }
   align-items: stretch;
 }
 .item-reference-images {
+  --reference-image-size: clamp(104px, 28vw, 132px);
   display: grid;
-  grid-template-columns: minmax(0, .94fr) minmax(0, 1.06fr);
+  grid-template-columns: var(--reference-image-size) minmax(0, 1fr);
   gap: 7px;
   align-items: stretch;
 }
 .reference-image {
   width: 100%;
-  height: 92px;
+  height: var(--reference-image-size);
   padding: 3px;
   border: 1px solid #dbe1e5;
   border-radius: 7px;
@@ -1352,6 +1353,7 @@ textarea { min-height: 110px; resize: vertical; }
 }
 .barcode-reference {
   background: #fff;
+  aspect-ratio: auto;
 }
 .reference-image.empty {
   border-style: dashed;

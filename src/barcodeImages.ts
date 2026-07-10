@@ -7,7 +7,8 @@ type BarcodeRow = {
   excelRow: number;
   itemNo: string;
   barcode: string;
-  productImageUrl: string;
+  productImageThumbUrl: string;
+  productImageOriginalUrl: string;
 };
 
 type BarcodeSheetMap = {
@@ -17,8 +18,13 @@ type BarcodeSheetMap = {
 
 export type BarcodeWorkbookData = {
   barcodeImages: Record<string, string>;
-  productImagesByItemNo: Record<string, string>;
-  productImagesByBarcode: Record<string, string>;
+  productImagesByItemNo: Record<string, ProductImageReference>;
+  productImagesByBarcode: Record<string, ProductImageReference>;
+};
+
+export type ProductImageReference = {
+  thumbUrl: string;
+  originalUrl: string;
 };
 
 const mimeFromPath = (path: string) => {
@@ -91,15 +97,17 @@ function barcodeRowsFromSheet(sheet: XLSX.WorkSheet): BarcodeSheetMap | null {
   const itemNoColumn = headers.findIndex((header) => header === "순번");
   const barcodeColumn = headers.findIndex((header) => header === "바코드");
   const imageColumn = headers.findIndex((header) => header === "바코드 이미지");
-  const productImageColumn = headers.findIndex((header) => ["이미지원본링크", "원본이미지링크", "상품이미지원본링크", "썸네일링크", "상품이미지미리보기링크", "미리보기링크", "상품이미지링크", "이미지링크"].includes(header));
-  if (itemNoColumn === -1 || barcodeColumn === -1 || (imageColumn === -1 && productImageColumn === -1)) return null;
+  const productThumbColumn = headers.findIndex((header) => ["썸네일링크", "상품이미지미리보기링크", "미리보기링크", "thumbnail"].includes(header));
+  const productOriginalColumn = headers.findIndex((header) => ["이미지원본링크", "원본이미지링크", "상품이미지원본링크", "상품이미지링크", "이미지링크"].includes(header));
+  if (itemNoColumn === -1 || barcodeColumn === -1 || (imageColumn === -1 && productThumbColumn === -1 && productOriginalColumn === -1)) return null;
   const rows = matrix
     .slice(headerIndex + 1)
     .map((row, index) => ({
       excelRow: headerIndex + index + 2,
       itemNo: clean(row[itemNoColumn]),
       barcode: clean(row[barcodeColumn]).replace(/\.0$/, ""),
-      productImageUrl: productImageColumn === -1 ? "" : clean(row[productImageColumn]),
+      productImageThumbUrl: productThumbColumn === -1 ? "" : clean(row[productThumbColumn]),
+      productImageOriginalUrl: productOriginalColumn === -1 ? "" : clean(row[productOriginalColumn]),
     }))
     .filter((row) => row.itemNo);
   return { rows, imageColumn: imageColumn === -1 ? undefined : imageColumn + 1 };
@@ -110,8 +118,8 @@ export async function extractBarcodeWorkbookData(source: Blob | ArrayBuffer): Pr
   const workbook = XLSX.read(buffer, { type: "array" });
   const zip = await JSZip.loadAsync(buffer);
   const barcodeImages: Record<string, string> = {};
-  const productImagesByItemNo: Record<string, string> = {};
-  const productImagesByBarcode: Record<string, string> = {};
+  const productImagesByItemNo: Record<string, ProductImageReference> = {};
+  const productImagesByBarcode: Record<string, ProductImageReference> = {};
   const workbookXml = await zip.file("xl/workbook.xml")?.async("string");
   const workbookRelsXml = await zip.file("xl/_rels/workbook.xml.rels")?.async("string");
   const sheetPathByName = workbookXml && workbookRelsXml ? workbookSheetPaths(workbookXml, workbookRelsXml) : new Map<string, string>();
@@ -121,8 +129,13 @@ export async function extractBarcodeWorkbookData(source: Blob | ArrayBuffer): Pr
     if (!barcodeSheet?.rows.length) continue;
     const itemNoByRow = new Map(barcodeSheet.rows.map((row) => [row.excelRow, row.itemNo]));
     barcodeSheet.rows.forEach((row) => {
-      if (row.productImageUrl && !productImagesByItemNo[row.itemNo]) productImagesByItemNo[row.itemNo] = row.productImageUrl;
-      if (row.productImageUrl && row.barcode && !productImagesByBarcode[row.barcode]) productImagesByBarcode[row.barcode] = row.productImageUrl;
+      const image = {
+        thumbUrl: row.productImageThumbUrl || row.productImageOriginalUrl,
+        originalUrl: row.productImageOriginalUrl || row.productImageThumbUrl,
+      };
+      if (!image.thumbUrl && !image.originalUrl) return;
+      if (!productImagesByItemNo[row.itemNo]) productImagesByItemNo[row.itemNo] = image;
+      if (row.barcode && !productImagesByBarcode[row.barcode]) productImagesByBarcode[row.barcode] = image;
     });
 
     if (!barcodeSheet.imageColumn) continue;
