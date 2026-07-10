@@ -12,7 +12,7 @@ type BarcodeRow = {
 
 type BarcodeSheetMap = {
   rows: BarcodeRow[];
-  imageColumn: number;
+  imageColumn?: number;
 };
 
 export type BarcodeWorkbookData = {
@@ -92,7 +92,7 @@ function barcodeRowsFromSheet(sheet: XLSX.WorkSheet): BarcodeSheetMap | null {
   const barcodeColumn = headers.findIndex((header) => header === "바코드");
   const imageColumn = headers.findIndex((header) => header === "바코드 이미지");
   const productImageColumn = headers.findIndex((header) => ["썸네일링크", "상품이미지미리보기링크", "미리보기링크", "상품이미지링크", "이미지링크"].includes(header));
-  if (itemNoColumn === -1 || barcodeColumn === -1 || imageColumn === -1) return null;
+  if (itemNoColumn === -1 || barcodeColumn === -1 || (imageColumn === -1 && productImageColumn === -1)) return null;
   const rows = matrix
     .slice(headerIndex + 1)
     .map((row, index) => ({
@@ -102,7 +102,7 @@ function barcodeRowsFromSheet(sheet: XLSX.WorkSheet): BarcodeSheetMap | null {
       productImageUrl: productImageColumn === -1 ? "" : clean(row[productImageColumn]),
     }))
     .filter((row) => row.itemNo);
-  return { rows, imageColumn: imageColumn + 1 };
+  return { rows, imageColumn: imageColumn === -1 ? undefined : imageColumn + 1 };
 }
 
 export async function extractBarcodeWorkbookData(source: Blob | ArrayBuffer): Promise<BarcodeWorkbookData> {
@@ -124,6 +124,8 @@ export async function extractBarcodeWorkbookData(source: Blob | ArrayBuffer): Pr
       if (row.productImageUrl && !productImagesByItemNo[row.itemNo]) productImagesByItemNo[row.itemNo] = row.productImageUrl;
       if (row.productImageUrl && row.barcode && !productImagesByBarcode[row.barcode]) productImagesByBarcode[row.barcode] = row.productImageUrl;
     });
+
+    if (!barcodeSheet.imageColumn) continue;
 
     const sheetPath = sheetPathByName.get(sheetName) ?? `xl/worksheets/sheet${sheetIndex + 1}.xml`;
     const sheetXml = await zip.file(sheetPath)?.async("string");
