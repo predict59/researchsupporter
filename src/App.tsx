@@ -111,7 +111,9 @@ const PHOTO_MIN_EDGE = 760;
 const PHOTO_QUALITY_STEPS = [0.72, 0.64, 0.56, 0.48, 0.4, 0.32];
 const PRICE_DIFF_WARN_PERCENT = 30;
 const TARGET_MAP_URL = "https://www.google.com/maps/d/u/1/edit?mid=1ej99Lo6WS4GROBCQPr0a66MhQR_vXuM&usp=sharing";
+const PRODUCT_IMAGE_REFERENCE_FILE = `${import.meta.env.BASE_URL}data/barcode_product_reference.xlsx`;
 type BarcodeImageIndex = Record<string, string>;
+type ProductImageReference = { byItemNo: Record<string, string>; byBarcode: Record<string, string> };
 type PriceCandidate = { value: number; score: number; source: "comma" | "plain" };
 type PriceOcrWorker = Awaited<ReturnType<typeof import("tesseract.js")["createWorker"]>>;
 const PRICE_KEYWORDS = /원|가격|정상|판매|할인|행사|특가|세일|SALE|sale|올리브|카드|멤버십|회원|쿠폰/;
@@ -519,6 +521,7 @@ function App() {
   const [itemQuery, setItemQuery] = useState("");
   const [filter, setFilter] = useState<Filter>("전체");
   const [barcodeIndex, setBarcodeIndex] = useState<BarcodeImageIndex>({});
+  const [referenceProductImages, setReferenceProductImages] = useState<ProductImageReference>({ byItemNo: {}, byBarcode: {} });
   const [barcodeModalItemId, setBarcodeModalItemId] = useState("");
   const [barcodeReturnItemId, setBarcodeReturnItemId] = useState("");
   const [imagePreview, setImagePreview] = useState<{ src: string; title: string } | null>(null);
@@ -669,6 +672,28 @@ function App() {
       })
       .catch(() => {
         if (!cancelled) setBarcodeIndex({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(PRODUCT_IMAGE_REFERENCE_FILE, { cache: "force-cache" })
+      .then((response) => {
+        if (!response.ok) throw new Error(`product image reference file not found: ${response.status}`);
+        return response.arrayBuffer();
+      })
+      .then((buffer) => extractBarcodeWorkbookData(buffer))
+      .then((data) => {
+        if (cancelled) return;
+        setReferenceProductImages({
+          byItemNo: data.productImagesByItemNo,
+          byBarcode: data.productImagesByBarcode,
+        });
+      })
+      .catch((error) => {
+        console.warn("기본 상품사진 참조 파일을 읽지 못했습니다.", error);
       });
     return () => {
       cancelled = true;
@@ -1847,7 +1872,7 @@ function App() {
             {visibleStoreItems.map((item) => {
               const eligibility = getPriceEligibility(item);
               const itemPhotoMissing = item.status === "완료" && requiredPhotoLabels(item, photos.filter((photo) => photo.storeId === item.storeId)).length > 0;
-              const productImage = linkedImageSrc(item.productImageUrl);
+              const productImage = linkedImageSrc(item.productImageUrl || referenceProductImages.byItemNo[item.itemNo] || referenceProductImages.byBarcode[item.barcode]);
               const barcodeImage = barcodeImageSrc(item, barcodeIndex);
               return (
                 <article id={`item-card-${item.id}`} className={`card compact item-card ${selectedItemId === item.id ? "focused" : ""} ${item.status === "완료" ? "completed" : ""}`} key={item.id}>
