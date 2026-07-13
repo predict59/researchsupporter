@@ -1430,21 +1430,22 @@ textarea { min-height: 110px; resize: vertical; }
 }
 .quick-item-grid {
   display: grid;
-  grid-template-columns: clamp(76px, 20vw, 96px) minmax(0, 1fr);
-  gap: 7px;
-  align-items: start;
+  grid-template-columns: clamp(92px, 24vw, 118px) minmax(0, 1fr);
+  gap: 8px;
+  align-items: stretch;
 }
 .quick-item-fields {
   min-width: 0;
   display: grid;
-  gap: 5px;
+  gap: 4px;
+  align-content: start;
 }
 .quick-item-meta {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
-  gap: 1px 6px;
+  grid-template-columns: 42px minmax(0, 1fr) 56px minmax(0, 1fr);
+  gap: 2px 5px;
   margin: 0;
-  font-size: 11.5px;
+  font-size: 11px;
 }
 .quick-item-meta dt {
   color: #64748b;
@@ -1470,33 +1471,34 @@ textarea { min-height: 110px; resize: vertical; }
   text-overflow: ellipsis;
 }
 .quick-barcode-value button {
+  width: 24px;
+  min-width: 24px;
   min-height: 22px;
   height: 22px;
-  padding: 0 7px;
+  padding: 0;
   border-radius: 999px;
-  font-size: 11px;
-  font-weight: 900;
   flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
 }
 .quick-photo-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 5px;
+  gap: 6px;
 }
 .quick-photo-box {
   min-width: 0;
-  border: 1px dashed #cbd5e1;
-  border-radius: 7px;
-  background: #f8fafc;
-  padding: 5px 6px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
   display: flex;
   align-items: center;
-  gap: 5px;
-  min-height: 34px;
+  gap: 6px;
+  min-height: 28px;
 }
 .quick-photo-box.uploaded {
-  border-color: #86efac;
-  background: #f0fdf4;
+  background: transparent;
 }
 .quick-photo-box > span {
   color: #64748b;
@@ -1514,13 +1516,13 @@ textarea { min-height: 110px; resize: vertical; }
 }
 .quick-photo-state strong {
   color: #047857;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 900;
 }
 .quick-photo-delete {
-  width: 22px;
-  height: 22px;
-  min-height: 22px;
+  width: 20px;
+  height: 20px;
+  min-height: 20px;
   padding: 0;
   border-radius: 999px;
   border-color: #fecaca;
@@ -1533,9 +1535,9 @@ textarea { min-height: 110px; resize: vertical; }
   position: relative;
   min-width: 0;
   flex: 1 1 auto;
-  min-height: 26px;
+  min-height: 28px;
   border: 1px dashed #94a3b8;
-  border-radius: 999px;
+  border-radius: 8px;
   background: #fff;
   color: #334155;
   font-size: 11px;
@@ -1553,9 +1555,24 @@ textarea { min-height: 110px; resize: vertical; }
   opacity: 0;
   cursor: pointer;
 }
+.quick-price-chip-row {
+  display: flex;
+  justify-content: flex-start;
+  min-height: 24px;
+}
+.quick-price-chip-row button {
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  border: 1px solid #99f6e4;
+  background: #ecfdf5;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 900;
+}
 .quick-price-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 72px 64px;
+  grid-template-columns: minmax(0, 1fr) 70px 58px;
   gap: 5px;
   align-items: end;
 }
@@ -1581,6 +1598,7 @@ textarea { min-height: 110px; resize: vertical; }
 }
 .quick-price-summary {
   grid-template-columns: 58px minmax(0, 1fr);
+  font-size: 11.5px;
 }
 .image-preview-modal {
   max-width: min(92vw, 560px);

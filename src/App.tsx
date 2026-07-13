@@ -1,4 +1,4 @@
-import { Camera, CheckCircle2, ChevronDown, ChevronUp, Download, Menu, MoreVertical, Phone, SlidersHorizontal, Search, Upload, X } from "lucide-react";
+import { Camera, CheckCircle2, ChevronDown, ChevronUp, Download, Eye, Menu, MoreVertical, Phone, SlidersHorizontal, Search, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { clearAllData, deletePhoto, getBarcodeIndex, getItems, getPhotos, getPhotosByRegion, getPhotosByStore, getRegions, getSettings, getStores, importAllData, importRegionData, now, putItem, putPhoto, putStore, saveBarcodeIndex, saveParsedData, saveSettings, today, uid } from "./db";
@@ -2219,13 +2219,15 @@ function QuickItemCard({
         <div className="quick-item-fields">
           <dl className="quick-item-meta">
             <dt>제조사</dt><dd>{item.companyName || "-"}</dd>
+            <dt>기준가격</dt><dd>{item.basePrice?.toLocaleString() ?? "-"}원</dd>
             <dt>규격</dt><dd>{item.spec || "-"}</dd>
-            <dt>바코드</dt><dd className="quick-barcode-value"><span>{item.barcode || "-"}</span><button type="button" disabled={!barcodeSrc} onClick={onBarcode}>보기</button></dd>
+            <dt>바코드</dt><dd className="quick-barcode-value"><span>{item.barcode || "-"}</span><button type="button" disabled={!barcodeSrc} onClick={onBarcode} aria-label="바코드 보기"><Eye size={13} /></button></dd>
           </dl>
           <div className="quick-photo-row">
-            <QuickPhotoBox label="진열사진" photo={displayPhoto} onPreview={(src) => onPreview(src, "제품진열사진")} onFile={(file) => onPhoto("PRODUCT_DISPLAY", file)} onDelete={() => displayPhoto && onDeletePhoto(displayPhoto)} />
-            <QuickPhotoBox label="정보사진" photo={infoPhoto} onPreview={(src) => onPreview(src, "제품정보사진")} onFile={(file) => onPhoto("PRODUCT_INFO_BARCODE", file)} onDelete={() => infoPhoto && onDeletePhoto(infoPhoto)} />
+            <QuickPhotoBox label="진열사진" photo={displayPhoto} onFile={(file) => onPhoto("PRODUCT_DISPLAY", file)} onDelete={() => displayPhoto && onDeletePhoto(displayPhoto)} />
+            <QuickPhotoBox label="정보사진" photo={infoPhoto} onFile={(file) => onPhoto("PRODUCT_INFO_BARCODE", file)} onDelete={() => infoPhoto && onDeletePhoto(infoPhoto)} />
           </div>
+          {item.basePrice !== null && <div className="quick-price-chip-row"><button type="button" onClick={() => setPriceText(item.basePrice!.toLocaleString())}>기준가격 {item.basePrice.toLocaleString()}원</button></div>}
           <div className="quick-price-row">
             <label>
               <span>정상가</span>
@@ -2235,7 +2237,6 @@ function QuickItemCard({
             <button type="button" onClick={onOpenDetail}>상세</button>
           </div>
           <dl className="item-mini-info quick-price-summary">
-            <dt>기준가격</dt><dd>{item.basePrice?.toLocaleString() ?? "-"}원</dd>
             <dt>조사가격</dt><dd>정상 {priceValue?.toLocaleString() ?? item.normalPrice?.toLocaleString() ?? "-"}원 · 할인 {item.discountPrice?.toLocaleString() ?? "-"}원 {eligibility && <span className={`eligibility-badge ${eligibility.label === "부적격" ? "bad" : "good"}`} title={eligibility.reason}>{eligibility.label}</span>}</dd>
           </dl>
         </div>
@@ -2244,7 +2245,7 @@ function QuickItemCard({
   );
 }
 
-function QuickPhotoBox({ label, photo, onFile, onDelete }: { label: string; photo?: SurveyPhoto; onPreview: (src: string) => void; onFile: (file: File) => void | Promise<void>; onDelete: () => void | Promise<void> }) {
+function QuickPhotoBox({ label, photo, onFile, onDelete }: { label: string; photo?: SurveyPhoto; onFile: (file: File) => void | Promise<void>; onDelete: () => void | Promise<void> }) {
   const inputId = useRef(uid("quick_photo"));
   const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0];
