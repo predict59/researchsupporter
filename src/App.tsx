@@ -14,6 +14,7 @@ type Filter = "전체" | "미완료" | "미조사" | "조사중" | "완료" | "�
 type StoreSort = "이름 순" | "품목 많은 순" | "미완료 많은 순" | "거리 순";
 type ItemSort = "기본 순" | "물품코드 순";
 type WorkspaceMode = "list" | "map";
+type ItemListMode = "quick" | "barcode";
 type ConfirmState = {
   title: string;
   message: string;
@@ -72,7 +73,7 @@ function resetItemInput(item: SurveyItem): SurveyItem {
     specMatch: "",
     barcodeMatch: "",
     normalPrice: null,
-    hasDiscount: null,
+    hasDiscount: false,
     discountPrice: null,
     discountStartDate: "",
     discountEndDate: "",
@@ -91,6 +92,7 @@ function resetItemInput(item: SurveyItem): SurveyItem {
     updatedAt: now(),
   };
 }
+const normalizeItemDefaults = (item: SurveyItem): SurveyItem => item.hasDiscount === null ? { ...item, hasDiscount: false } : item;
 function hasItemSurveyInput(item: SurveyItem) {
   return item.status !== "미조사"
     || Boolean(item.normalDisplay)
@@ -536,6 +538,7 @@ function App() {
   const [itemSort, setItemSort] = useState<ItemSort>("기본 순");
   const [itemsReturnView, setItemsReturnView] = useState<"workspace" | "store">("store");
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>("list");
+  const [itemListMode, setItemListMode] = useState<ItemListMode>("quick");
   const [workspaceToolsOpen, setWorkspaceToolsOpen] = useState(false);
   const [itemToolsOpen, setItemToolsOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -1190,6 +1193,69 @@ function App() {
     return true;
   }
 
+  async function saveQuickItemPhoto(item: SurveyItem, type: Extract<PhotoType, "PRODUCT_DISPLAY" | "PRODUCT_INFO_BARCODE">, file: File) {
+    const resized = await resizePhoto(file);
+    const previous = photos.filter((photo) => photo.itemId === item.id && photo.type === type);
+    await Promise.all(previous.map((photo) => deletePhoto(photo.id)));
+    const photo: SurveyPhoto = {
+      id: uid("photo"),
+      region: item.region,
+      storeId: item.storeId,
+      itemId: item.id,
+      type,
+      blob: resized.blob,
+      originalName: file.name,
+      mimeType: resized.mimeType,
+      takenAt: now(),
+    };
+    await putPhoto(photo);
+    if (type === "PRODUCT_INFO_BARCODE") {
+      try {
+        const detected = await detectBarcodeFromFile(file);
+        const expected = onlyDigits(item.barcode);
+        const detectedValues = detected.values.map(onlyDigits).filter(Boolean);
+        if (expected && detectedValues.length > 0) {
+          await putItem({ ...item, barcodeMatch: detectedValues.includes(expected) ? "O" : "X", updatedAt: now() });
+        }
+      } catch (error) {
+        console.warn("빠른입력 바코드 인식 실패", error);
+      }
+    }
+    await refresh(item.region);
+  }
+
+  async function deleteQuickItemPhoto(photo: SurveyPhoto) {
+    await deletePhoto(photo.id);
+    await refresh(photo.region);
+  }
+
+  async function saveQuickItem(item: SurveyItem, normalPrice: number | null) {
+    const storeSurveyDate = stores.find((store) => store.id === item.storeId)?.surveyDate || today();
+    const saved: SurveyItem = {
+      ...item,
+      surveyDate: storeSurveyDate,
+      normalDisplay: "O",
+      specMatch: "O",
+      barcodeMatch: item.barcodeMatch === "X" ? "X" : "O",
+      normalPrice,
+      hasDiscount: false,
+      discountPrice: null,
+      discountStartDate: "",
+      discountEndDate: "",
+      discountType: "",
+      discountOral: false,
+      discountPeriodMode: "",
+      barcodeRegistered: "",
+      abnormalStatus: "",
+      posChecked: "",
+      posPrice: null,
+      status: "완료",
+      updatedAt: now(),
+    };
+    await putItem(saved);
+    await refresh(saved.region);
+  }
+
   function moveBarcodeModal(direction: -1 | 1) {
     const index = barcodeModalItems.findIndex((item) => item.id === barcodeModalItemId);
     const next = barcodeModalItems[index + direction];
@@ -1262,7 +1328,7 @@ function App() {
       specMatch: "" as const,
       barcodeMatch: "" as const,
       normalPrice: null,
-      hasDiscount: null,
+      hasDiscount: false,
       discountPrice: null,
       discountStartDate: "",
       discountEndDate: "",
@@ -1303,7 +1369,7 @@ function App() {
       specMatch: "" as const,
       barcodeMatch: "" as const,
       normalPrice: null,
-      hasDiscount: null,
+      hasDiscount: false,
       discountPrice: null,
       discountStartDate: "",
       discountEndDate: "",
@@ -1794,7 +1860,7 @@ function App() {
               const frontPhoto = photos.find((photo) => photo.id === selectedStore.frontPhotoId);
               return (
             <div className={`photo-slot store-front-slot ${selectedStore.frontPhotoId ? "uploaded" : ""}`}>
-              {frontPhoto && <PhotoPreview photo={frontPhoto} className="wide-preview" />}
+              {frontPhoto && <PhotoPreview photo={frontPhoto} className="wide-preview" onOpen={(src) => setImagePreview({ src, title: selectedStore.storeName })} />}
               <div className="photo-actions store-front-actions">
                 {!selectedStore.frontPhotoId && <PhotoInput label="" pickLabel="갤러리 선택" onFile={saveStorePhoto} />}
                 {frontPhoto && <button className="danger" onClick={removeStorePhoto}>지우기</button>}
@@ -1846,6 +1912,10 @@ function App() {
               <SlidersHorizontal size={18} /> 필터 {itemToolsOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </button>
           </div>
+          <div className="workspace-tabs item-mode-tabs" role="tablist" aria-label="물품 입력 모드">
+            <button type="button" className={itemListMode === "quick" ? "active" : ""} onClick={() => setItemListMode("quick")}>빠른입력</button>
+            <button type="button" className={itemListMode === "barcode" ? "active" : ""} onClick={() => setItemListMode("barcode")}>바코드</button>
+          </div>
           {itemToolsOpen && (
             <section className="tool-panel">
               <div className="store-filter-sort-row">
@@ -1867,6 +1937,25 @@ function App() {
               const productThumbImage = linkedImageSrc(productReference?.thumbUrl || item.productImageUrl);
               const productOriginalImage = linkedImageSrc(productReference?.originalUrl || productReference?.thumbUrl || item.productImageUrl);
               const barcodeImage = barcodeImageSrc(item, barcodeIndex);
+              if (itemListMode === "quick") {
+                return (
+                  <QuickItemCard
+                    key={item.id}
+                    item={item}
+                    photos={photos.filter((photo) => photo.storeId === item.storeId)}
+                    productThumbImage={productThumbImage}
+                    productOriginalImage={productOriginalImage}
+                    focused={selectedItemId === item.id}
+                    photoMissing={itemPhotoMissing}
+                    eligibility={eligibility}
+                    onPreview={(src, title) => setImagePreview({ src, title })}
+                    onOpenDetail={() => { setBarcodeReturnItemId(""); setItemNavigationIds(visibleStoreItems.map((candidate) => candidate.id)); setSelectedItemId(item.id); setView("item"); }}
+                    onPhoto={(type, file) => saveQuickItemPhoto(item, type, file)}
+                    onDeletePhoto={deleteQuickItemPhoto}
+                    onQuickSave={(normalPrice) => saveQuickItem(item, normalPrice)}
+                  />
+                );
+              }
               return (
                 <article id={`item-card-${item.id}`} className={`card compact item-card ${selectedItemId === item.id ? "focused" : ""} ${item.status === "완료" ? "completed" : ""}`} key={item.id}>
                   <div className="item-card-head"><h2 className="item-title"><span className="item-code">{item.itemNo}</span><span>{item.productName}</span><a className="image-search-button" href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(item.productName)}`} target="_blank" aria-label={`${item.productName} 이미지 검색`} onClick={(event) => event.stopPropagation()}><Search size={15} /></a></h2><div className="item-badge-stack">{item.status !== "완료" && <Badge text={item.status} />}{itemPhotoMissing && <span className="badge badge-photo-missing">사진누락</span>}</div></div>
@@ -1887,7 +1976,8 @@ function App() {
                     <div className="item-card-lower">
                       <dl className="item-mini-info">
                         <dt>기준가격</dt><dd>{item.basePrice?.toLocaleString() ?? "-"}원</dd>
-                        <dt>조사가격</dt><dd>{item.normalPrice?.toLocaleString() ?? "-"}원 {eligibility && <span className={`eligibility-badge ${eligibility.label === "부적격" ? "bad" : "good"}`} title={eligibility.reason}>{eligibility.label}</span>}</dd>
+                        <dt>정상가</dt><dd>{item.normalPrice?.toLocaleString() ?? "-"}원 {eligibility && <span className={`eligibility-badge ${eligibility.label === "부적격" ? "bad" : "good"}`} title={eligibility.reason}>{eligibility.label}</span>}</dd>
+                        <dt>할인가</dt><dd>{item.discountPrice?.toLocaleString() ?? "-"}원</dd>
                       </dl>
                       <button className="primary item-input-button" onClick={() => { setBarcodeReturnItemId(""); setItemNavigationIds(visibleStoreItems.map((candidate) => candidate.id)); setSelectedItemId(item.id); setView("item"); }}>입력</button>
                     </div>
@@ -2037,7 +2127,7 @@ function SearchBox({ value, onChange, placeholder }: { value: string; onChange: 
   return <label className="search"><Search size={18} /><input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} /></label>;
 }
 
-function PhotoPreview({ photo, className = "" }: { photo?: SurveyPhoto; className?: string }) {
+function PhotoPreview({ photo, className = "", onOpen }: { photo?: SurveyPhoto; className?: string; onOpen?: (src: string) => void }) {
   const [url, setUrl] = useState("");
   useEffect(() => {
     if (!photo) {
@@ -2049,7 +2139,9 @@ function PhotoPreview({ photo, className = "" }: { photo?: SurveyPhoto; classNam
     return () => URL.revokeObjectURL(nextUrl);
   }, [photo?.id]);
   if (!photo || !url) return null;
-  return <img className={`photo-preview ${className}`} src={url} alt="업로드 사진 미리보기" loading="lazy" />;
+  const image = <img className={`photo-preview ${className}`} src={url} alt="업로드 사진 미리보기" loading="lazy" />;
+  if (!onOpen) return image;
+  return <button type="button" className="photo-preview-button" onClick={() => onOpen(url)}>{image}</button>;
 }
 
 function ReferenceImage({ src, label, barcode = false, onClick }: { src?: string; label: string; barcode?: boolean; onClick?: () => void }) {
@@ -2059,6 +2151,107 @@ function ReferenceImage({ src, label, barcode = false, onClick }: { src?: string
   const className = `reference-image ${barcode ? "barcode-reference" : ""} ${empty ? "empty" : ""} ${onClick ? "clickable" : ""}`;
   const body = empty ? <span>{label}</span> : <img src={src} alt={label} loading="lazy" onError={() => setFailed(true)} />;
   return onClick ? <button type="button" className={className} onClick={onClick}>{body}</button> : <div className={className}>{body}</div>;
+}
+
+function QuickItemCard({
+  item,
+  photos,
+  productThumbImage,
+  productOriginalImage,
+  focused,
+  photoMissing,
+  eligibility,
+  onPreview,
+  onOpenDetail,
+  onPhoto,
+  onDeletePhoto,
+  onQuickSave,
+}: {
+  item: SurveyItem;
+  photos: SurveyPhoto[];
+  productThumbImage?: string;
+  productOriginalImage?: string;
+  focused: boolean;
+  photoMissing: boolean;
+  eligibility: ReturnType<typeof getPriceEligibility>;
+  onPreview: (src: string, title: string) => void;
+  onOpenDetail: () => void;
+  onPhoto: (type: Extract<PhotoType, "PRODUCT_DISPLAY" | "PRODUCT_INFO_BARCODE">, file: File) => Promise<void>;
+  onDeletePhoto: (photo: SurveyPhoto) => Promise<void>;
+  onQuickSave: (normalPrice: number | null) => Promise<void>;
+}) {
+  const [priceText, setPriceText] = useState(item.normalPrice?.toLocaleString() ?? "");
+  const [saving, setSaving] = useState(false);
+  useEffect(() => setPriceText(item.normalPrice?.toLocaleString() ?? ""), [item.id, item.normalPrice]);
+  const displayPhoto = photos.find((photo) => photo.itemId === item.id && photo.type === "PRODUCT_DISPLAY");
+  const infoPhoto = photos.find((photo) => photo.itemId === item.id && photo.type === "PRODUCT_INFO_BARCODE");
+  const save = async () => {
+    setSaving(true);
+    try {
+      await onQuickSave(num(priceText));
+    } finally {
+      setSaving(false);
+    }
+  };
+  const priceValue = num(priceText);
+  return (
+    <article id={`item-card-${item.id}`} className={`card compact item-card quick-item-card ${focused ? "focused" : ""} ${item.status === "완료" ? "completed" : ""}`} key={item.id}>
+      <div className="item-card-head">
+        <h2 className="item-title">
+          <span className="item-code">{item.itemNo}</span>
+          <span>{item.productName}</span>
+          <a className="image-search-button" href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(item.productName)}`} target="_blank" aria-label={`${item.productName} 이미지 검색`} onClick={(event) => event.stopPropagation()}><Search size={15} /></a>
+        </h2>
+        <div className="item-badge-stack">{item.status !== "완료" && <Badge text={item.status} />}{photoMissing && <span className="badge badge-photo-missing">사진누락</span>}</div>
+      </div>
+      <div className="quick-item-grid">
+        <ReferenceImage
+          src={productThumbImage}
+          label="상품사진"
+          onClick={productOriginalImage ? () => onPreview(productOriginalImage, `${item.itemNo} ${item.productName}`) : undefined}
+        />
+        <div className="quick-item-fields">
+          <dl className="quick-item-meta">
+            <dt>제조사</dt><dd>{item.companyName || "-"}</dd>
+            <dt>규격</dt><dd>{item.spec || "-"}</dd>
+            <dt>바코드</dt><dd>{item.barcode || "-"}</dd>
+          </dl>
+          <div className="quick-photo-row">
+            <QuickPhotoBox label="진열사진" photo={displayPhoto} onPreview={(src) => onPreview(src, "제품진열사진")} onFile={(file) => onPhoto("PRODUCT_DISPLAY", file)} onDelete={() => displayPhoto && onDeletePhoto(displayPhoto)} />
+            <QuickPhotoBox label="정보사진" photo={infoPhoto} onPreview={(src) => onPreview(src, "제품정보사진")} onFile={(file) => onPhoto("PRODUCT_INFO_BARCODE", file)} onDelete={() => infoPhoto && onDeletePhoto(infoPhoto)} />
+          </div>
+          <div className="quick-price-row">
+            <label>
+              <span>정상가</span>
+              <input inputMode="numeric" value={priceText} placeholder="원" onChange={(event) => setPriceText(num(event.target.value)?.toLocaleString() ?? "")} />
+            </label>
+            <button type="button" className="primary" onClick={save} disabled={saving}>{saving ? "저장 중" : "저장"}</button>
+            <button type="button" onClick={onOpenDetail}>상세</button>
+          </div>
+          <dl className="item-mini-info quick-price-summary">
+            <dt>기준가격</dt><dd>{item.basePrice?.toLocaleString() ?? "-"}원</dd>
+            <dt>조사가격</dt><dd>정상 {priceValue?.toLocaleString() ?? item.normalPrice?.toLocaleString() ?? "-"}원 · 할인 {item.discountPrice?.toLocaleString() ?? "-"}원 {eligibility && <span className={`eligibility-badge ${eligibility.label === "부적격" ? "bad" : "good"}`} title={eligibility.reason}>{eligibility.label}</span>}</dd>
+          </dl>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function QuickPhotoBox({ label, photo, onPreview, onFile, onDelete }: { label: string; photo?: SurveyPhoto; onPreview: (src: string) => void; onFile: (file: File) => void | Promise<void>; onDelete: () => void | Promise<void> }) {
+  return (
+    <div className={`quick-photo-box ${photo ? "uploaded" : ""}`}>
+      <span>{label}</span>
+      {photo ? (
+        <>
+          <PhotoPreview photo={photo} className="quick-photo-preview" onOpen={onPreview} />
+          <button type="button" className="danger subtle" onClick={onDelete}>지우기</button>
+        </>
+      ) : (
+        <PhotoInput label="" cameraLabel="촬영" pickLabel="선택" onFile={onFile} />
+      )}
+    </div>
+  );
 }
 
 function ImagePreviewModal({ image, onClose }: { image: { src: string; title: string }; onClose: () => void }) {
@@ -2081,6 +2274,7 @@ function ImagePreviewModal({ image, onClose }: { image: { src: string; title: st
 }
 
 function StoreFrontPhotoPicker({ photos, stores, onSelect, onClose }: { photos: SurveyPhoto[]; stores: SurveyStore[]; onSelect: (photo: SurveyPhoto) => void | Promise<void>; onClose: () => void }) {
+  const [preview, setPreview] = useState<{ src: string; title: string } | null>(null);
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true">
       <section className="modal front-photo-picker-modal">
@@ -2098,16 +2292,18 @@ function StoreFrontPhotoPicker({ photos, stores, onSelect, onClose }: { photos: 
             {photos.map((photo) => {
               const store = stores.find((candidate) => candidate.id === photo.storeId);
               return (
-                <button type="button" className="front-photo-option" key={photo.id} onClick={() => onSelect(photo)}>
-                  <PhotoPreview photo={photo} className="front-photo-thumb" />
+                <div className="front-photo-option" key={photo.id}>
+                  <PhotoPreview photo={photo} className="front-photo-thumb" onOpen={(src) => setPreview({ src, title: store?.storeName ?? "전경사진" })} />
                   <strong>{store?.storeName || "매장 정보 없음"}</strong>
                   <span>{store?.storeAddress || "-"}</span>
                   <em>{photo.takenAt ? photo.takenAt.slice(0, 16).replace("T", " ") : "-"}</em>
-                </button>
+                  <button type="button" className="primary" onClick={() => onSelect(photo)}>사용</button>
+                </div>
               );
             })}
           </div>
         )}
+        {preview && <ImagePreviewModal image={preview} onClose={() => setPreview(null)} />}
       </section>
     </div>
   );
@@ -2735,7 +2931,7 @@ function PhotoInput({ id, label, cameraLabel = "촬영", pickLabel = "선택", o
 }
 
 function ItemEditor({ item, storeItems, navigationItems, storeOperatingStatus, photos, fromBarcodeFlow, onSave, onSaved, onList, onStoreList, onMove, onBarcodeReturn, askConfirm }: { item: SurveyItem; storeItems: SurveyItem[]; navigationItems: SurveyItem[]; storeOperatingStatus: StoreOperatingStatus | ""; photos: SurveyPhoto[]; fromBarcodeFlow?: boolean; onSave: (item: SurveyItem, photoOverride?: SurveyPhoto[]) => Promise<boolean>; onSaved: () => Promise<void>; onList: (focusId?: string) => void; onStoreList: () => void; onMove: (id: string) => void; onBarcodeReturn?: (id: string) => void; askConfirm: (options: ConfirmState) => Promise<boolean> }) {
-  const [draft, setDraft] = useState(item);
+  const [draft, setDraft] = useState(() => normalizeItemDefaults(item));
   const [localPhotos, setLocalPhotos] = useState<SurveyPhoto[]>(photos);
   const [deletedPhotoIds, setDeletedPhotoIds] = useState<string[]>([]);
   const [photoMessage, setPhotoMessage] = useState("");
@@ -2743,8 +2939,9 @@ function ItemEditor({ item, storeItems, navigationItems, storeOperatingStatus, p
   const [priceCandidates, setPriceCandidates] = useState<PriceCandidate[]>([]);
   const [saveMessage, setSaveMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [photoPreview, setPhotoPreview] = useState<{ src: string; title: string } | null>(null);
   useEffect(() => {
-    setDraft(item);
+    setDraft(normalizeItemDefaults(item));
     setLocalPhotos(photos);
     setDeletedPhotoIds([]);
     setPhotoMessage("");
@@ -3088,9 +3285,9 @@ function ItemEditor({ item, storeItems, navigationItems, storeOperatingStatus, p
       <h2 className="section-title-row">④ 사진자료 {missing.length > 0 && <span className="inline-missing">사진누락: {missing.join(", ")}</span>}<button type="button" className="mini-section-button" onClick={downloadItemPhotos}>사진다운로드</button></h2>
       {!draft.normalDisplay && <p className="notice">먼저 ② 실물 확인에서 진열여부 O/X를 선택해 주세요.</p>}
       {draft.normalDisplay === "O" && <p className="small-help barcode-help">참고: 제품정보사진 촬영 시 브라우저가 지원하면 바코드를 자동 비교합니다.</p>}
-      <PhotoSlot id="photo-product-display" label="제품진열사진" description="가격정보와 진열상품이 동시노출 되도록 촬영" disabled={draft.normalDisplay !== "O"} photo={itemPhotos.display} message={priceOcrMessage} messageTone={priceCandidates.length ? "ok" : priceOcrMessage.includes("중") ? "pending" : "warn"} onFile={(file) => upload("PRODUCT_DISPLAY", file)} onDelete={(photo) => { setDeletedPhotoIds((old) => photo.id.startsWith("temp_") ? old : [...old, photo.id]); setLocalPhotos((old) => old.filter((candidate) => candidate.id !== photo.id)); }} />
-      <PhotoSlot id="photo-product-info" label="제품정보사진" description="상품후면 제품상세정보와 바코드 동시노출 되도록 촬영" disabled={draft.normalDisplay !== "O"} photo={itemPhotos.info} message={photoMessage} messageTone={photoMessage.includes("불일치") || photoMessage.includes("실패") || photoMessage.includes("못했습니다") ? "warn" : "ok"} onFile={(file) => upload("PRODUCT_INFO_BARCODE", file)} onDelete={(photo) => { setDeletedPhotoIds((old) => photo.id.startsWith("temp_") ? old : [...old, photo.id]); setLocalPhotos((old) => old.filter((candidate) => candidate.id !== photo.id)); }} />
-      <PhotoSlot id="photo-pos-receipt" label="POS/영수증사진" description="제품진열사진으로 가격정보 확인불가 시 POS기 또는 영수증 촬영" disabled={!draft.normalDisplay} photo={itemPhotos.pos} message={itemPhotos.pos ? priceOcrMessage : ""} messageTone={priceCandidates.length ? "ok" : priceOcrMessage.includes("중") ? "pending" : "warn"} onFile={(file) => upload("POS_RECEIPT", file)} onDelete={(photo) => { setDeletedPhotoIds((old) => photo.id.startsWith("temp_") ? old : [...old, photo.id]); setLocalPhotos((old) => old.filter((candidate) => candidate.id !== photo.id)); }} />
+      <PhotoSlot id="photo-product-display" label="제품진열사진" description="가격정보와 진열상품이 동시노출 되도록 촬영" disabled={draft.normalDisplay !== "O"} photo={itemPhotos.display} message={priceOcrMessage} messageTone={priceCandidates.length ? "ok" : priceOcrMessage.includes("중") ? "pending" : "warn"} onPreview={(src) => setPhotoPreview({ src, title: "제품진열사진" })} onFile={(file) => upload("PRODUCT_DISPLAY", file)} onDelete={(photo) => { setDeletedPhotoIds((old) => photo.id.startsWith("temp_") ? old : [...old, photo.id]); setLocalPhotos((old) => old.filter((candidate) => candidate.id !== photo.id)); }} />
+      <PhotoSlot id="photo-product-info" label="제품정보사진" description="상품후면 제품상세정보와 바코드 동시노출 되도록 촬영" disabled={draft.normalDisplay !== "O"} photo={itemPhotos.info} message={photoMessage} messageTone={photoMessage.includes("불일치") || photoMessage.includes("실패") || photoMessage.includes("못했습니다") ? "warn" : "ok"} onPreview={(src) => setPhotoPreview({ src, title: "제품정보사진" })} onFile={(file) => upload("PRODUCT_INFO_BARCODE", file)} onDelete={(photo) => { setDeletedPhotoIds((old) => photo.id.startsWith("temp_") ? old : [...old, photo.id]); setLocalPhotos((old) => old.filter((candidate) => candidate.id !== photo.id)); }} />
+      <PhotoSlot id="photo-pos-receipt" label="POS/영수증사진" description="제품진열사진으로 가격정보 확인불가 시 POS기 또는 영수증 촬영" disabled={!draft.normalDisplay} photo={itemPhotos.pos} message={itemPhotos.pos ? priceOcrMessage : ""} messageTone={priceCandidates.length ? "ok" : priceOcrMessage.includes("중") ? "pending" : "warn"} onPreview={(src) => setPhotoPreview({ src, title: "POS/영수증사진" })} onFile={(file) => upload("POS_RECEIPT", file)} onDelete={(photo) => { setDeletedPhotoIds((old) => photo.id.startsWith("temp_") ? old : [...old, photo.id]); setLocalPhotos((old) => old.filter((candidate) => candidate.id !== photo.id)); }} />
     </section>
     <section className={`panel price-panel ${priceBlocked ? "disabled-block" : ""}`}>
       <h2>⑤ 가격</h2>
@@ -3118,6 +3315,7 @@ function ItemEditor({ item, storeItems, navigationItems, storeOperatingStatus, p
     </section>
     <section className="panel"><h2>⑥ 특이사항</h2><div className={`abnormal-block ${draft.normalDisplay === "X" ? "disabled-block" : ""}`}><Choice label="비정상진열" disabled={draft.normalDisplay === "X"} value={draft.normalDisplay === "X" ? "" : draft.abnormalDisplay ?? ""} values={["O", "X"]} onChange={(value) => update({ abnormalDisplay: value as SurveyItem["abnormalDisplay"] })} />{draft.abnormalDisplay === "O" && draft.normalDisplay !== "X" && <p className="small-help warn">비정상진열이면 어떤 위치에 어떻게 진열되어 있었는지 아래 비고에 적어주세요.</p>}</div><div className="memo-block"><h3>비고</h3><p className="small-help">자주 쓰는 문구를 누르면 비고에 추가됩니다. 다시 누르면 해당 문구만 제거됩니다.</p><div className="chips memo-chips">{["가격 수기 입력", "규격묶음분할", "가격표 없음", "폐점", "품절", "재고 소진", "재입고 예정", "1+1 행사", "임시휴업", "판매처 미협조"].map((text) => { const active = draft.memo.split("/").map((part) => part.trim()).includes(text); return <button key={text} className={active ? "active" : ""} onClick={() => update({ memo: toggleMemo(text) })}>{text}</button>; })}</div><textarea placeholder="예: 판매처 미협조 / 재입고 예정 / 사진 촬영 불가" value={draft.memo} onChange={(event) => update({ memo: event.target.value })} /></div></section>
     <section className="panel reset-panel"><button type="button" className="danger" onClick={resetCurrentItem}>물품 정보 초기화</button></section>
+    {photoPreview && <ImagePreviewModal image={photoPreview} onClose={() => setPhotoPreview(null)} />}
     {saveMessage && <div className={`save-toast ${saveMessage.includes("실패") ? "danger-toast" : ""}`}>{saveMessage}</div>}
     <div className="item-action-fab">
       <div className="item-progress-mini"><span style={{ width: `${storeItems.length ? Math.round((storeItems.filter((candidate) => candidate.status === "완료").length + (draft.status === "완료" && !storeItems.find((candidate) => candidate.id === draft.id && candidate.status === "완료") ? 1 : 0)) / storeItems.length * 100) : 0}%` }} /></div>
@@ -3144,7 +3342,7 @@ function PriceCandidateChips({ label, candidates, disabled, onPick }: { label: s
   );
 }
 
-function PhotoSlot({ id, label, description, disabled, photo, message, messageTone, onFile, onDelete }: { id: string; label: string; description: string; disabled?: boolean; photo?: SurveyPhoto; message?: string; messageTone?: "ok" | "warn" | "pending"; onFile: (file: File) => void | Promise<void>; onDelete: (photo: SurveyPhoto) => void | Promise<void> }) {
+function PhotoSlot({ id, label, description, disabled, photo, message, messageTone, onFile, onDelete, onPreview }: { id: string; label: string; description: string; disabled?: boolean; photo?: SurveyPhoto; message?: string; messageTone?: "ok" | "warn" | "pending"; onFile: (file: File) => void | Promise<void>; onDelete: (photo: SurveyPhoto) => void | Promise<void>; onPreview?: (src: string) => void }) {
   return (
     <div id={`${id}-slot`} className={`photo-slot ${photo ? "uploaded" : ""} ${disabled ? "photo-disabled" : ""}`}>
       <div>
@@ -3153,7 +3351,7 @@ function PhotoSlot({ id, label, description, disabled, photo, message, messageTo
           <small>{description}</small>
         </div>
       </div>
-      {photo && <PhotoPreview photo={photo} className="wide-preview" />}
+      {photo && <PhotoPreview photo={photo} className="wide-preview" onOpen={onPreview} />}
       <div className="photo-actions">
         {!photo && !disabled && <PhotoInput id={id} label="촬영/선택" onFile={onFile} />}
         {photo && !disabled && <button className="danger" onClick={() => onDelete(photo)}>지우기</button>}

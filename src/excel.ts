@@ -203,7 +203,7 @@ export async function parseSurveyWorkbook(source: Blob | ArrayBuffer): Promise<{
       specMatch: "",
       barcodeMatch: "",
       normalPrice: null,
-      hasDiscount: null,
+      hasDiscount: false,
       discountPrice: null,
       discountStartDate: "",
       discountEndDate: "",
