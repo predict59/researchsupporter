@@ -1229,7 +1229,7 @@ function App() {
     await refresh(photo.region);
   }
 
-  async function saveQuickItem(item: SurveyItem, normalPrice: number | null) {
+  async function saveQuickItem(item: SurveyItem, normalPrice: number | null, discountPrice: number | null) {
     const storeSurveyDate = stores.find((store) => store.id === item.storeId)?.surveyDate || today();
     const saved: SurveyItem = {
       ...item,
@@ -1238,8 +1238,8 @@ function App() {
       specMatch: "O",
       barcodeMatch: item.barcodeMatch === "X" ? "X" : "O",
       normalPrice,
-      hasDiscount: false,
-      discountPrice: null,
+      hasDiscount: discountPrice !== null,
+      discountPrice,
       discountStartDate: "",
       discountEndDate: "",
       discountType: "",
@@ -1954,7 +1954,7 @@ function App() {
                     onOpenDetail={() => { setBarcodeReturnItemId(""); setItemNavigationIds(visibleStoreItems.map((candidate) => candidate.id)); setSelectedItemId(item.id); setView("item"); }}
                     onPhoto={(type, file) => saveQuickItemPhoto(item, type, file)}
                     onDeletePhoto={deleteQuickItemPhoto}
-                    onQuickSave={(normalPrice) => saveQuickItem(item, normalPrice)}
+                    onQuickSave={(normalPrice, discountPrice) => saveQuickItem(item, normalPrice, discountPrice)}
                   />
                 );
               }
@@ -2184,22 +2184,23 @@ function QuickItemCard({
   onOpenDetail: () => void;
   onPhoto: (type: Extract<PhotoType, "PRODUCT_DISPLAY" | "PRODUCT_INFO_BARCODE">, file: File) => Promise<void>;
   onDeletePhoto: (photo: SurveyPhoto) => Promise<void>;
-  onQuickSave: (normalPrice: number | null) => Promise<void>;
+  onQuickSave: (normalPrice: number | null, discountPrice: number | null) => Promise<void>;
 }) {
   const [priceText, setPriceText] = useState(item.normalPrice?.toLocaleString() ?? "");
+  const [discountText, setDiscountText] = useState(item.discountPrice?.toLocaleString() ?? "");
   const [saving, setSaving] = useState(false);
   useEffect(() => setPriceText(item.normalPrice?.toLocaleString() ?? ""), [item.id, item.normalPrice]);
+  useEffect(() => setDiscountText(item.discountPrice?.toLocaleString() ?? ""), [item.id, item.discountPrice]);
   const displayPhoto = photos.find((photo) => photo.itemId === item.id && photo.type === "PRODUCT_DISPLAY");
   const infoPhoto = photos.find((photo) => photo.itemId === item.id && photo.type === "PRODUCT_INFO_BARCODE");
   const save = async () => {
     setSaving(true);
     try {
-      await onQuickSave(num(priceText));
+      await onQuickSave(num(priceText), num(discountText));
     } finally {
       setSaving(false);
     }
   };
-  const priceValue = num(priceText);
   return (
     <article id={`item-card-${item.id}`} className={`card compact item-card quick-item-card ${focused ? "focused" : ""} ${item.status === "완료" ? "completed" : ""}`} key={item.id}>
       <div className="item-card-head">
@@ -2220,25 +2221,28 @@ function QuickItemCard({
           <dl className="quick-item-meta">
             <dt>제조사</dt><dd>{item.companyName || "-"}</dd>
             <dt>기준가격</dt><dd>{item.basePrice?.toLocaleString() ?? "-"}원</dd>
-            <dt>규격</dt><dd>{item.spec || "-"}</dd>
             <dt>바코드</dt><dd className="quick-barcode-value"><span>{item.barcode || "-"}</span><button type="button" disabled={!barcodeSrc} onClick={onBarcode} aria-label="바코드 보기"><Eye size={13} /></button></dd>
+            <dt>규격</dt><dd>{item.spec || "-"}</dd>
           </dl>
           <div className="quick-photo-row">
             <QuickPhotoBox label="진열사진" photo={displayPhoto} onFile={(file) => onPhoto("PRODUCT_DISPLAY", file)} onDelete={() => displayPhoto && onDeletePhoto(displayPhoto)} />
             <QuickPhotoBox label="정보사진" photo={infoPhoto} onFile={(file) => onPhoto("PRODUCT_INFO_BARCODE", file)} onDelete={() => infoPhoto && onDeletePhoto(infoPhoto)} />
           </div>
-          {item.basePrice !== null && <div className="quick-price-chip-row"><button type="button" onClick={() => setPriceText(item.basePrice!.toLocaleString())}>기준가격 {item.basePrice.toLocaleString()}원</button></div>}
           <div className="quick-price-row">
             <label>
               <span>정상가</span>
               <input inputMode="numeric" value={priceText} placeholder="원" onChange={(event) => setPriceText(num(event.target.value)?.toLocaleString() ?? "")} />
             </label>
+            <label>
+              <span>할인가</span>
+              <input inputMode="numeric" value={discountText} placeholder="원" onChange={(event) => setDiscountText(num(event.target.value)?.toLocaleString() ?? "")} />
+            </label>
+          </div>
+          <div className="quick-action-row">
             <button type="button" className="primary" onClick={save} disabled={saving}>{saving ? "저장 중" : "저장"}</button>
             <button type="button" onClick={onOpenDetail}>상세</button>
           </div>
-          <dl className="item-mini-info quick-price-summary">
-            <dt>조사가격</dt><dd>정상 {priceValue?.toLocaleString() ?? item.normalPrice?.toLocaleString() ?? "-"}원 · 할인 {item.discountPrice?.toLocaleString() ?? "-"}원 {eligibility && <span className={`eligibility-badge ${eligibility.label === "부적격" ? "bad" : "good"}`} title={eligibility.reason}>{eligibility.label}</span>}</dd>
-          </dl>
+          {eligibility && <div className="quick-eligibility-row"><span className={`eligibility-badge ${eligibility.label === "부적격" ? "bad" : "good"}`} title={eligibility.reason}>{eligibility.label}</span></div>}
         </div>
       </div>
     </article>
@@ -3307,11 +3311,13 @@ function ItemEditor({ item, storeItems, navigationItems, storeOperatingStatus, p
       <p className="price-base">기준가격: <strong>{draft.basePrice?.toLocaleString() ?? "-"}원</strong></p>
       {priceBlocked && <p className="small-help warn">바코드 미등록 미판매 상품은 가격 입력을 생략합니다.</p>}
       <PriceCandidateChips label="정상가 후보" candidates={priceCandidates} disabled={priceBlocked} onPick={(value) => update({ normalPrice: value, discountPrice: draft.memo.includes("1+1 행사") ? Math.round(value / 2) : draft.discountPrice })} />
+      <BasePriceChip label="기준가격" price={draft.basePrice} disabled={priceBlocked} onPick={(value) => update({ normalPrice: value, discountPrice: draft.memo.includes("1+1 행사") ? Math.round(value / 2) : draft.discountPrice })} />
       <Money label="정상가" disabled={priceBlocked} value={draft.normalPrice} onChange={(value) => { const normalPrice = num(value); update({ normalPrice, discountPrice: draft.memo.includes("1+1 행사") && normalPrice !== null ? Math.round(normalPrice / 2) : draft.discountPrice }); }} />
       {priceFeedback && <div className="price-feedback">{priceFeedback.messages.map((message) => <span className={message.type} key={message.text}><i aria-hidden="true">{message.type === "warn" ? "!" : "✓"}</i>{message.text}</span>)}</div>}
       <Choice label="할인 여부" disabled={priceBlocked} value={discountChoice} values={["할인 없음", "단품할인", "묶음할인(1+1, 50%)"]} onChange={updateDiscountChoice} />
       <div className={draft.hasDiscount !== true || priceBlocked ? "disabled-block" : ""}>
         <PriceCandidateChips label="할인가 후보" candidates={priceCandidates} disabled={draft.hasDiscount !== true || priceBlocked} onPick={(value) => update({ hasDiscount: true, discountPrice: value })} />
+        <BasePriceChip label="기준가격" price={draft.basePrice} disabled={draft.hasDiscount !== true || priceBlocked} onPick={(value) => update({ hasDiscount: true, discountPrice: value })} />
         <Money label="할인가" value={draft.discountPrice} disabled={draft.hasDiscount !== true || priceBlocked} onChange={(value) => update({ discountPrice: num(value) })} />
         <DiscountControls
           disabled={draft.hasDiscount !== true || priceBlocked}
@@ -3350,6 +3356,20 @@ function PriceCandidateChips({ label, candidates, disabled, onPick }: { label: s
             {candidate.value.toLocaleString()}원
           </button>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function BasePriceChip({ label, price, disabled, onPick }: { label: string; price: number | null; disabled?: boolean; onPick: (value: number) => void }) {
+  if (price === null) return null;
+  return (
+    <div className={`price-candidates base-price-chip ${disabled ? "disabled-block" : ""}`}>
+      <span>{label}</span>
+      <div>
+        <button type="button" disabled={disabled} onClick={() => onPick(price)}>
+          {price.toLocaleString()}원
+        </button>
       </div>
     </div>
   );
