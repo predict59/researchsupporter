@@ -118,6 +118,7 @@ const PRODUCT_IMAGE_REFERENCE_FILE = `${import.meta.env.BASE_URL}data/barcode_pr
 type BarcodeImageIndex = Record<string, string>;
 type ProductImageReferenceIndex = { byItemNo: Record<string, ProductImageReference>; byBarcode: Record<string, ProductImageReference> };
 type PriceCandidate = { value: number; score: number; source: "comma" | "plain" };
+type QuickPhotoUploadResult = { priceCandidates?: PriceCandidate[] };
 type PriceOcrWorker = Awaited<ReturnType<typeof import("tesseract.js")["createWorker"]>>;
 const PRICE_KEYWORDS = /원|가격|정상|판매|할인|행사|특가|세일|SALE|sale|올리브|카드|멤버십|회원|쿠폰/;
 const PRICE_MAX_VALUE = 999999;
@@ -1193,7 +1194,7 @@ function App() {
     return true;
   }
 
-  async function saveQuickItemPhoto(item: SurveyItem, type: Extract<PhotoType, "PRODUCT_DISPLAY" | "PRODUCT_INFO_BARCODE">, file: File) {
+  async function saveQuickItemPhoto(item: SurveyItem, type: Extract<PhotoType, "PRODUCT_DISPLAY" | "PRODUCT_INFO_BARCODE">, file: File): Promise<QuickPhotoUploadResult> {
     const resized = await resizePhoto(file);
     const previous = photos.filter((photo) => photo.itemId === item.id && photo.type === type);
     await Promise.all(previous.map((photo) => deletePhoto(photo.id)));
@@ -1209,19 +1210,45 @@ function App() {
       takenAt: now(),
     };
     await putPhoto(photo);
+    let result: QuickPhotoUploadResult = {};
+    if (type === "PRODUCT_DISPLAY") {
+      try {
+        result = { priceCandidates: (await detectPriceCandidatesFromBlob(resized.blob)).slice(0, 2) };
+      } catch (error) {
+        console.warn("빠른입력 가격 인식 실패", error);
+      }
+    }
     if (type === "PRODUCT_INFO_BARCODE") {
       try {
         const detected = await detectBarcodeFromFile(file);
         const expected = onlyDigits(item.barcode);
         const detectedValues = detected.values.map(onlyDigits).filter(Boolean);
         if (expected && detectedValues.length > 0) {
-          await putItem({ ...item, barcodeMatch: detectedValues.includes(expected) ? "O" : "X", updatedAt: now() });
+          const matched = detectedValues.includes(expected);
+          await putItem({ ...item, barcodeMatch: matched ? "O" : "X", updatedAt: now() });
+          if (!matched) {
+            await refresh(item.region);
+            const ok = await askConfirm({
+              title: "바코드 불일치",
+              message: "바코드가 다릅니다. 상세입력하러 가겠습니까?",
+              confirmText: "이동",
+              cancelText: "닫기",
+            });
+            if (ok) {
+              setBarcodeReturnItemId("");
+              setItemNavigationIds(items.filter((candidate) => candidate.storeId === item.storeId).sort(compareSurveyItemOrder).map((candidate) => candidate.id));
+              setSelectedItemId(item.id);
+              setView("item");
+            }
+            return result;
+          }
         }
       } catch (error) {
         console.warn("빠른입력 바코드 인식 실패", error);
       }
     }
     await refresh(item.region);
+    return result;
   }
 
   async function deleteQuickItemPhoto(photo: SurveyPhoto) {
@@ -1945,7 +1972,6 @@ function App() {
                     photos={photos.filter((photo) => photo.storeId === item.storeId)}
                     productThumbImage={productThumbImage}
                     productOriginalImage={productOriginalImage}
-                    barcodeSrc={barcodeImage}
                     focused={selectedItemId === item.id}
                     photoMissing={itemPhotoMissing}
                     eligibility={eligibility}
@@ -2160,7 +2186,6 @@ function QuickItemCard({
   photos,
   productThumbImage,
   productOriginalImage,
-  barcodeSrc,
   focused,
   photoMissing,
   eligibility,
@@ -2175,20 +2200,21 @@ function QuickItemCard({
   photos: SurveyPhoto[];
   productThumbImage?: string;
   productOriginalImage?: string;
-  barcodeSrc?: string;
   focused: boolean;
   photoMissing: boolean;
   eligibility: ReturnType<typeof getPriceEligibility>;
   onPreview: (src: string, title: string) => void;
   onBarcode: () => void;
   onOpenDetail: () => void;
-  onPhoto: (type: Extract<PhotoType, "PRODUCT_DISPLAY" | "PRODUCT_INFO_BARCODE">, file: File) => Promise<void>;
+  onPhoto: (type: Extract<PhotoType, "PRODUCT_DISPLAY" | "PRODUCT_INFO_BARCODE">, file: File) => Promise<QuickPhotoUploadResult>;
   onDeletePhoto: (photo: SurveyPhoto) => Promise<void>;
   onQuickSave: (normalPrice: number | null) => Promise<void>;
 }) {
   const [priceText, setPriceText] = useState(item.normalPrice?.toLocaleString() ?? "");
+  const [quickPriceCandidates, setQuickPriceCandidates] = useState<PriceCandidate[]>([]);
   const [saving, setSaving] = useState(false);
   useEffect(() => setPriceText(item.normalPrice?.toLocaleString() ?? ""), [item.id, item.normalPrice]);
+  useEffect(() => setQuickPriceCandidates([]), [item.id]);
   const displayPhoto = photos.find((photo) => photo.itemId === item.id && photo.type === "PRODUCT_DISPLAY");
   const infoPhoto = photos.find((photo) => photo.itemId === item.id && photo.type === "PRODUCT_INFO_BARCODE");
   const save = async () => {
@@ -2199,6 +2225,10 @@ function QuickItemCard({
       setSaving(false);
     }
   };
+  const uploadQuickPhoto = async (type: Extract<PhotoType, "PRODUCT_DISPLAY" | "PRODUCT_INFO_BARCODE">, file: File) => {
+    const result = await onPhoto(type, file);
+    if (type === "PRODUCT_DISPLAY") setQuickPriceCandidates((result.priceCandidates ?? []).slice(0, 2));
+  };
   return (
     <article id={`item-card-${item.id}`} className={`card compact item-card quick-item-card ${focused ? "focused" : ""} ${item.status === "완료" ? "completed" : ""}`} key={item.id}>
       <div className="item-card-head">
@@ -2206,7 +2236,7 @@ function QuickItemCard({
           <span className="item-code">{item.itemNo}</span>
           <span className="quick-title-text">
             <span className="quick-product-line"><span>{item.productName}</span><a className="image-search-button" href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(item.productName)}`} target="_blank" aria-label={`${item.productName} 이미지 검색`} onClick={(event) => event.stopPropagation()}><Search size={15} /></a></span>
-            <button type="button" className="quick-barcode-link" disabled={!barcodeSrc} onClick={onBarcode}>{item.barcode || "-"}</button>
+            <button type="button" className="quick-barcode-link" onClick={onBarcode}>{item.barcode || "-"}</button>
           </span>
         </h2>
         <div className="item-badge-stack">{item.status !== "완료" && <Badge text={item.status} />}</div>
@@ -2224,8 +2254,8 @@ function QuickItemCard({
             <dt>기준가격</dt><dd>{item.basePrice?.toLocaleString() ?? "-"}원</dd>
           </dl>
           <div className="quick-photo-row">
-            <QuickPhotoBox label="진열사진" photo={displayPhoto} onFile={(file) => onPhoto("PRODUCT_DISPLAY", file)} onDelete={() => displayPhoto && onDeletePhoto(displayPhoto)} />
-            <QuickPhotoBox label="정보사진" photo={infoPhoto} onFile={(file) => onPhoto("PRODUCT_INFO_BARCODE", file)} onDelete={() => infoPhoto && onDeletePhoto(infoPhoto)} />
+            <QuickPhotoBox label="진열사진" photo={displayPhoto} onFile={(file) => uploadQuickPhoto("PRODUCT_DISPLAY", file)} onDelete={() => displayPhoto && onDeletePhoto(displayPhoto)} />
+            <QuickPhotoBox label="정보사진" photo={infoPhoto} onFile={(file) => uploadQuickPhoto("PRODUCT_INFO_BARCODE", file)} onDelete={() => infoPhoto && onDeletePhoto(infoPhoto)} />
           </div>
           <div className="quick-price-save-row">
             <label className="quick-price-row">
@@ -2234,6 +2264,7 @@ function QuickItemCard({
             </label>
             <button type="button" className="primary" onClick={save} disabled={saving}>{saving ? "저장 중" : "저장"}</button>
           </div>
+          {quickPriceCandidates.length > 0 && <div className="quick-price-candidates">{quickPriceCandidates.map((candidate) => <button type="button" key={candidate.value} onClick={() => setPriceText(candidate.value.toLocaleString())}>{candidate.value.toLocaleString()}원</button>)}</div>}
           <div className="quick-footer-row">
             <div className="quick-eligibility-row">
               {eligibility && <span className={`eligibility-badge ${eligibility.label === "부적격" ? "bad" : "good"}`} title={eligibility.reason}>{eligibility.label}</span>}

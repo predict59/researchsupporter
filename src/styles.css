@@ -1501,10 +1501,10 @@ textarea { min-height: 110px; resize: vertical; }
   color: #2563eb;
   font-size: 10.5px;
   font-weight: 900;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+  text-decoration: none;
   justify-self: start;
   line-height: 1.1;
+  touch-action: manipulation;
 }
 .quick-photo-row {
   display: grid;
@@ -1592,31 +1592,51 @@ textarea { min-height: 110px; resize: vertical; }
   font-weight: 900;
 }
 .quick-price-row input {
-  min-height: 32px;
-  height: 32px;
+  min-height: 30px;
+  height: 30px;
   padding: 7px 9px;
   font-size: 13px;
 }
 .quick-price-save-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 74px;
-  gap: 5px;
+  gap: 4px;
   align-items: center;
-  min-height: 32px;
+  min-height: 30px;
 }
 .quick-price-save-row button,
 .quick-footer-row button {
-  min-height: 32px;
-  height: 32px;
+  min-height: 30px;
+  height: 30px;
   padding: 0 8px;
   font-size: 12px;
+}
+.quick-price-candidates {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  min-height: 24px;
+}
+.quick-price-candidates button {
+  flex: 0 0 auto;
+  min-height: 22px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid #99f6e4;
+  background: #ecfdf5;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 900;
 }
 .quick-footer-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 70px;
-  gap: 5px;
+  gap: 4px;
   align-items: center;
-  min-height: 28px;
+  min-height: 26px;
 }
 .quick-eligibility-row {
   min-height: 22px;
