@@ -1906,15 +1906,15 @@ function App() {
 
       {view === "items" && selectedStore && (
         <main className="page">
+          <div className="workspace-tabs item-mode-tabs" role="tablist" aria-label="물품 입력 모드">
+            <button type="button" className={itemListMode === "quick" ? "active" : ""} onClick={() => setItemListMode("quick")}>빠른입력</button>
+            <button type="button" className={itemListMode === "barcode" ? "active" : ""} onClick={() => setItemListMode("barcode")}>바코드</button>
+          </div>
           <div className="sticky-search item-search">
             <SearchBox value={itemQuery} onChange={setItemQuery} placeholder="품목명 / 바코드 / 품목코드 / 담당자" />
             <button className="tool-toggle" onClick={() => setItemToolsOpen((value) => !value)} aria-expanded={itemToolsOpen}>
               <SlidersHorizontal size={18} /> 필터 {itemToolsOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </button>
-          </div>
-          <div className="workspace-tabs item-mode-tabs" role="tablist" aria-label="물품 입력 모드">
-            <button type="button" className={itemListMode === "quick" ? "active" : ""} onClick={() => setItemListMode("quick")}>빠른입력</button>
-            <button type="button" className={itemListMode === "barcode" ? "active" : ""} onClick={() => setItemListMode("barcode")}>바코드</button>
           </div>
           {itemToolsOpen && (
             <section className="tool-panel">
@@ -1945,10 +1945,12 @@ function App() {
                     photos={photos.filter((photo) => photo.storeId === item.storeId)}
                     productThumbImage={productThumbImage}
                     productOriginalImage={productOriginalImage}
+                    barcodeSrc={barcodeImage}
                     focused={selectedItemId === item.id}
                     photoMissing={itemPhotoMissing}
                     eligibility={eligibility}
                     onPreview={(src, title) => setImagePreview({ src, title })}
+                    onBarcode={() => { setItemNavigationIds(visibleStoreItems.map((candidate) => candidate.id)); setBarcodeModalItemId(item.id); }}
                     onOpenDetail={() => { setBarcodeReturnItemId(""); setItemNavigationIds(visibleStoreItems.map((candidate) => candidate.id)); setSelectedItemId(item.id); setView("item"); }}
                     onPhoto={(type, file) => saveQuickItemPhoto(item, type, file)}
                     onDeletePhoto={deleteQuickItemPhoto}
@@ -2158,10 +2160,12 @@ function QuickItemCard({
   photos,
   productThumbImage,
   productOriginalImage,
+  barcodeSrc,
   focused,
   photoMissing,
   eligibility,
   onPreview,
+  onBarcode,
   onOpenDetail,
   onPhoto,
   onDeletePhoto,
@@ -2171,10 +2175,12 @@ function QuickItemCard({
   photos: SurveyPhoto[];
   productThumbImage?: string;
   productOriginalImage?: string;
+  barcodeSrc?: string;
   focused: boolean;
   photoMissing: boolean;
   eligibility: ReturnType<typeof getPriceEligibility>;
   onPreview: (src: string, title: string) => void;
+  onBarcode: () => void;
   onOpenDetail: () => void;
   onPhoto: (type: Extract<PhotoType, "PRODUCT_DISPLAY" | "PRODUCT_INFO_BARCODE">, file: File) => Promise<void>;
   onDeletePhoto: (photo: SurveyPhoto) => Promise<void>;
@@ -2214,7 +2220,7 @@ function QuickItemCard({
           <dl className="quick-item-meta">
             <dt>제조사</dt><dd>{item.companyName || "-"}</dd>
             <dt>규격</dt><dd>{item.spec || "-"}</dd>
-            <dt>바코드</dt><dd>{item.barcode || "-"}</dd>
+            <dt>바코드</dt><dd className="quick-barcode-value"><span>{item.barcode || "-"}</span><button type="button" disabled={!barcodeSrc} onClick={onBarcode}>보기</button></dd>
           </dl>
           <div className="quick-photo-row">
             <QuickPhotoBox label="진열사진" photo={displayPhoto} onPreview={(src) => onPreview(src, "제품진열사진")} onFile={(file) => onPhoto("PRODUCT_DISPLAY", file)} onDelete={() => displayPhoto && onDeletePhoto(displayPhoto)} />
@@ -2238,17 +2244,23 @@ function QuickItemCard({
   );
 }
 
-function QuickPhotoBox({ label, photo, onPreview, onFile, onDelete }: { label: string; photo?: SurveyPhoto; onPreview: (src: string) => void; onFile: (file: File) => void | Promise<void>; onDelete: () => void | Promise<void> }) {
+function QuickPhotoBox({ label, photo, onFile, onDelete }: { label: string; photo?: SurveyPhoto; onPreview: (src: string) => void; onFile: (file: File) => void | Promise<void>; onDelete: () => void | Promise<void> }) {
+  const inputId = useRef(uid("quick_photo"));
+  const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (file) await onFile(file);
+  };
   return (
     <div className={`quick-photo-box ${photo ? "uploaded" : ""}`}>
       <span>{label}</span>
       {photo ? (
-        <>
-          <PhotoPreview photo={photo} className="quick-photo-preview" onOpen={onPreview} />
-          <button type="button" className="danger subtle" onClick={onDelete}>지우기</button>
-        </>
+        <div className="quick-photo-state">
+          <strong>등록됨</strong>
+          <button type="button" className="quick-photo-delete" onClick={onDelete} aria-label={`${label} 삭제`}><X size={14} /></button>
+        </div>
       ) : (
-        <PhotoInput label="" cameraLabel="촬영" pickLabel="선택" onFile={onFile} />
+        <label className="quick-upload-button" htmlFor={inputId.current}><Upload size={14} />업로드<input id={inputId.current} type="file" accept="image/*" onChange={handleFile} /></label>
       )}
     </div>
   );

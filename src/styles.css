@@ -1423,28 +1423,28 @@ textarea { min-height: 110px; resize: vertical; }
   padding: 8px 10px;
 }
 .item-mode-tabs {
-  margin: -4px 0 10px;
+  margin: -12px 0 8px;
 }
 .quick-item-card {
-  gap: 8px;
+  gap: 6px;
 }
 .quick-item-grid {
   display: grid;
-  grid-template-columns: clamp(90px, 24vw, 116px) minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: clamp(76px, 20vw, 96px) minmax(0, 1fr);
+  gap: 7px;
   align-items: start;
 }
 .quick-item-fields {
   min-width: 0;
   display: grid;
-  gap: 7px;
+  gap: 5px;
 }
 .quick-item-meta {
   display: grid;
   grid-template-columns: 48px minmax(0, 1fr);
-  gap: 2px 6px;
+  gap: 1px 6px;
   margin: 0;
-  font-size: 12px;
+  font-size: 11.5px;
 }
 .quick-item-meta dt {
   color: #64748b;
@@ -1459,20 +1459,40 @@ textarea { min-height: 110px; resize: vertical; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.quick-barcode-value {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.quick-barcode-value span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.quick-barcode-value button {
+  min-height: 22px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  flex: 0 0 auto;
+}
 .quick-photo-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  gap: 5px;
 }
 .quick-photo-box {
   min-width: 0;
   border: 1px dashed #cbd5e1;
-  border-radius: 8px;
+  border-radius: 7px;
   background: #f8fafc;
-  padding: 6px;
-  display: grid;
+  padding: 5px 6px;
+  display: flex;
+  align-items: center;
   gap: 5px;
-  align-content: start;
+  min-height: 34px;
 }
 .quick-photo-box.uploaded {
   border-color: #86efac;
@@ -1482,30 +1502,61 @@ textarea { min-height: 110px; resize: vertical; }
   color: #64748b;
   font-size: 11px;
   font-weight: 900;
+  flex: 0 0 auto;
 }
-.quick-photo-box .photo-picker {
+.quick-photo-state {
+  min-width: 0;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 4px;
 }
-.quick-photo-box .photo-picker > div {
+.quick-photo-state strong {
+  color: #047857;
+  font-size: 12px;
+  font-weight: 900;
+}
+.quick-photo-delete {
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  padding: 0;
+  border-radius: 999px;
+  border-color: #fecaca;
+  background: #fff1f2;
+  color: #b91c1c;
+  display: inline-grid;
+  place-items: center;
+}
+.quick-upload-button {
+  position: relative;
+  min-width: 0;
+  flex: 1 1 auto;
+  min-height: 26px;
+  border: 1px dashed #94a3b8;
+  border-radius: 999px;
+  background: #fff;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 900;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   gap: 4px;
+  cursor: pointer;
+  overflow: hidden;
 }
-.quick-photo-box .photo-button {
-  min-height: 34px;
-  font-size: 12px;
-  border-width: 1px;
-}
-.quick-photo-preview {
-  height: 58px;
-}
-.quick-photo-box .danger.subtle {
-  min-height: 30px;
-  padding: 4px 8px;
-  font-size: 12px;
+.quick-upload-button input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
 }
 .quick-price-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 72px 64px;
-  gap: 6px;
+  gap: 5px;
   align-items: end;
 }
 .quick-price-row label {
@@ -1517,16 +1568,16 @@ textarea { min-height: 110px; resize: vertical; }
   font-weight: 900;
 }
 .quick-price-row input {
-  min-height: 38px;
-  height: 38px;
+  min-height: 34px;
+  height: 34px;
   padding: 8px 9px;
-  font-size: 14px;
+  font-size: 13px;
 }
 .quick-price-row button {
-  min-height: 38px;
-  height: 38px;
+  min-height: 34px;
+  height: 34px;
   padding: 0 8px;
-  font-size: 13px;
+  font-size: 12px;
 }
 .quick-price-summary {
   grid-template-columns: 58px minmax(0, 1fr);
