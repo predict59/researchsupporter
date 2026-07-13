@@ -2204,10 +2204,12 @@ function QuickItemCard({
       <div className="item-card-head">
         <h2 className="item-title">
           <span className="item-code">{item.itemNo}</span>
-          <span>{item.productName}</span>
-          <a className="image-search-button" href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(item.productName)}`} target="_blank" aria-label={`${item.productName} 이미지 검색`} onClick={(event) => event.stopPropagation()}><Search size={15} /></a>
+          <span className="quick-title-text">
+            <span className="quick-product-line"><span>{item.productName}</span><a className="image-search-button" href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(item.productName)}`} target="_blank" aria-label={`${item.productName} 이미지 검색`} onClick={(event) => event.stopPropagation()}><Search size={15} /></a></span>
+            <button type="button" className="quick-barcode-link" disabled={!barcodeSrc} onClick={onBarcode}>{item.barcode || "-"}</button>
+          </span>
         </h2>
-        <div className="item-badge-stack">{item.status !== "완료" && <Badge text={item.status} />}{photoMissing && <span className="badge badge-photo-missing">사진누락</span>}</div>
+        <div className="item-badge-stack">{item.status !== "완료" && <Badge text={item.status} />}</div>
       </div>
       <div className="quick-item-grid">
         <ReferenceImage
@@ -2218,23 +2220,27 @@ function QuickItemCard({
         <div className="quick-item-fields">
           <dl className="quick-item-meta">
             <dt>제조사</dt><dd>{item.companyName || "-"}</dd>
-            <dt>기준가격</dt><dd>{item.basePrice?.toLocaleString() ?? "-"}원</dd>
-            <dt>바코드</dt><dd className="quick-barcode-value"><button type="button" className="quick-barcode-link" disabled={!barcodeSrc} onClick={onBarcode}>{item.barcode || "-"}</button></dd>
             <dt>규격</dt><dd>{item.spec || "-"}</dd>
+            <dt>기준가격</dt><dd>{item.basePrice?.toLocaleString() ?? "-"}원</dd>
           </dl>
           <div className="quick-photo-row">
             <QuickPhotoBox label="진열사진" photo={displayPhoto} onFile={(file) => onPhoto("PRODUCT_DISPLAY", file)} onDelete={() => displayPhoto && onDeletePhoto(displayPhoto)} />
             <QuickPhotoBox label="정보사진" photo={infoPhoto} onFile={(file) => onPhoto("PRODUCT_INFO_BARCODE", file)} onDelete={() => infoPhoto && onDeletePhoto(infoPhoto)} />
           </div>
-          <label className="quick-price-row">
-            <span>정상가</span>
-            <input inputMode="numeric" value={priceText} placeholder="원" onChange={(event) => setPriceText(num(event.target.value)?.toLocaleString() ?? "")} />
-          </label>
-          <div className="quick-action-row">
+          <div className="quick-price-save-row">
+            <label className="quick-price-row">
+              <span>정상가</span>
+              <input inputMode="numeric" value={priceText} placeholder="원" onChange={(event) => setPriceText(num(event.target.value)?.toLocaleString() ?? "")} />
+            </label>
             <button type="button" className="primary" onClick={save} disabled={saving}>{saving ? "저장 중" : "저장"}</button>
+          </div>
+          <div className="quick-footer-row">
+            <div className="quick-eligibility-row">
+              {eligibility && <span className={`eligibility-badge ${eligibility.label === "부적격" ? "bad" : "good"}`} title={eligibility.reason}>{eligibility.label}</span>}
+              {photoMissing && <span className="badge badge-photo-missing">사진누락</span>}
+            </div>
             <button type="button" onClick={onOpenDetail}>상세</button>
           </div>
-          {eligibility && <div className="quick-eligibility-row"><span className={`eligibility-badge ${eligibility.label === "부적격" ? "bad" : "good"}`} title={eligibility.reason}>{eligibility.label}</span></div>}
         </div>
       </div>
     </article>

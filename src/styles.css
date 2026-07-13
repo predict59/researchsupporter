@@ -193,7 +193,7 @@ h2 { font-size: 18px; margin: 0 0 10px; letter-spacing: 0; }
 .item-title {
   display: flex;
   flex-wrap: nowrap;
-  align-items: center;
+  align-items: flex-start;
   gap: 5px;
   min-width: 0;
 }
@@ -205,6 +205,7 @@ h2 { font-size: 18px; margin: 0 0 10px; letter-spacing: 0; }
 }
 .image-search-button {
   width: 26px;
+  flex: 0 0 26px;
   min-height: 26px;
   border: 1px solid #cbd5e1;
   border-radius: 999px;
@@ -252,6 +253,7 @@ h2 { font-size: 18px; margin: 0 0 10px; letter-spacing: 0; }
 .item-code {
   display: inline-flex;
   align-items: center;
+  flex: 0 0 auto;
   min-height: 28px;
   border-radius: 999px;
   padding: 3px 9px;
@@ -302,6 +304,24 @@ textarea { min-height: 110px; resize: vertical; }
   color: #52616b;
   font-size: 12px;
   font-weight: 800;
+}
+.quick-title-text {
+  min-width: 0;
+  display: grid;
+  gap: 0;
+  line-height: 1.12;
+}
+.quick-product-line {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.quick-product-line > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .recent-region > div {
   min-width: 0;
@@ -1442,10 +1462,17 @@ textarea { min-height: 110px; resize: vertical; }
 }
 .quick-item-meta {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) 56px minmax(0, 1fr);
-  gap: 2px 5px;
+  grid-template-columns: 42px minmax(0, 1fr) 50px minmax(0, 1fr);
+  gap: 1px 5px;
   margin: 0;
   font-size: 11px;
+}
+.quick-item-meta dt:first-child,
+.quick-item-meta dt:first-child + dd {
+  grid-column: span 1;
+}
+.quick-item-meta dt:first-child + dd {
+  grid-column: 2 / 5;
 }
 .quick-item-meta dt {
   color: #64748b;
@@ -1460,13 +1487,10 @@ textarea { min-height: 110px; resize: vertical; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.quick-barcode-value {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
 .quick-barcode-link {
   min-width: 0;
+  width: fit-content;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   min-height: 0;
@@ -1475,15 +1499,17 @@ textarea { min-height: 110px; resize: vertical; }
   border: 0;
   background: transparent;
   color: #2563eb;
-  font-size: inherit;
+  font-size: 10.5px;
   font-weight: 900;
   text-decoration: underline;
   text-underline-offset: 2px;
+  justify-self: start;
+  line-height: 1.1;
 }
 .quick-photo-row {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  gap: 5px;
 }
 .quick-photo-box {
   min-width: 0;
@@ -1493,8 +1519,8 @@ textarea { min-height: 110px; resize: vertical; }
   padding: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
-  min-height: 28px;
+  gap: 4px;
+  min-height: 24px;
 }
 .quick-photo-box.uploaded {
   background: transparent;
@@ -1534,12 +1560,12 @@ textarea { min-height: 110px; resize: vertical; }
   position: relative;
   min-width: 0;
   flex: 1 1 auto;
-  min-height: 28px;
+  min-height: 24px;
   border: 1px dashed #94a3b8;
   border-radius: 8px;
   background: #fff;
   color: #334155;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 900;
   display: inline-flex;
   align-items: center;
@@ -1557,37 +1583,49 @@ textarea { min-height: 110px; resize: vertical; }
 .quick-price-row {
   display: grid;
   grid-template-columns: 48px minmax(0, 1fr);
-  gap: 7px;
+  gap: 6px;
   align-items: center;
-  min-height: 36px;
+  min-height: 32px;
   min-width: 0;
   color: #64748b;
   font-size: 11px;
   font-weight: 900;
 }
 .quick-price-row input {
-  min-height: 34px;
-  height: 34px;
-  padding: 8px 9px;
+  min-height: 32px;
+  height: 32px;
+  padding: 7px 9px;
   font-size: 13px;
 }
-.quick-action-row {
+.quick-price-save-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 70px;
+  grid-template-columns: minmax(0, 1fr) 74px;
   gap: 5px;
-  min-height: 34px;
+  align-items: center;
+  min-height: 32px;
 }
-.quick-action-row button {
-  min-height: 34px;
-  height: 34px;
+.quick-price-save-row button,
+.quick-footer-row button {
+  min-height: 32px;
+  height: 32px;
   padding: 0 8px;
   font-size: 12px;
 }
+.quick-footer-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 70px;
+  gap: 5px;
+  align-items: center;
+  min-height: 28px;
+}
 .quick-eligibility-row {
-  min-height: 20px;
+  min-height: 22px;
   display: flex;
   align-items: center;
   justify-content: flex-start;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
 }
 .image-preview-modal {
   max-width: min(92vw, 560px);
