@@ -2487,11 +2487,16 @@ function Badge({ text }: { text: string }) {
 }
 
 function getSurveySalePrice(item: SurveyItem) {
-  let price = item.normalPrice;
-  const longDiscount = item.hasDiscount && item.discountType.replace("구두", "") === "②" && item.discountPrice !== null;
-  if (longDiscount) price = item.discountPrice;
-  if (item.memo.includes("1+1") && price !== null) price = Math.round(price / 2);
-  return price;
+  const longDiscount =
+    item.hasDiscount &&
+    item.discountType.replace("구두", "") === "②" &&
+    item.discountPrice !== null;
+
+  if (longDiscount) {
+    return item.discountPrice;
+  }
+
+  return item.normalPrice;
 }
 
 function getPriceEligibility(item: SurveyItem) {
