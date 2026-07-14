@@ -10,7 +10,7 @@ import { mapSearchAddress, requiredPhotoLabels, summarize } from "./logic";
 import type { AppSettings, BackupPayload, PhotoType, Region, RegionStats, StoreOperatingStatus, SurveyItem, SurveyPhoto, SurveyStore } from "./types";
 
 type View = "upload" | "regions" | "assignment" | "workspace" | "store" | "items" | "item" | "backup" | "validation";
-type Filter = "전체" | "미완료" | "미조사" | "조사중" | "완료" | "사진누락" | "미진열" | "비정상진열";
+type Filter = "전체" | "미완료" | "미조사" | "조사중" | "완료" | "사진누락" | "미진열" | "비정상진열" | "부적격";
 type StoreSort = "이름 순" | "품목 많은 순" | "미완료 많은 순" | "거리 순";
 type ItemSort = "기본 순" | "물품코드 순";
 type WorkspaceMode = "list" | "map";
@@ -612,7 +612,8 @@ function App() {
     const ownStats = regionStatsByStore.get(store.id) ?? emptyStats;
     if (filter === "미완료" && ownStats.completed >= ownStats.total) return false;
     if (filter === "미진열" && !ownItems.some((item) => item.abnormalStatus === "미진열")) return false;
-    if (filter !== "전체" && filter !== "미완료" && filter !== "사진누락" && filter !== "미진열" && !ownItems.some((item) => item.status === filter)) return false;
+    if (filter === "부적격" && !ownItems.some((item) => getPriceEligibility(item)?.label === "부적격")) return false;
+    if (filter !== "전체" && filter !== "미완료" && filter !== "사진누락" && filter !== "미진열" && filter !== "비정상진열" && filter !== "부적격" && !ownItems.some((item) => item.status === filter)) return false;
     if (filter === "사진누락" && !photosReady) return false;
     if (filter === "사진누락" && ownStats.photoMissing === 0) return false;
     return true;
@@ -653,6 +654,7 @@ function App() {
       if (filter === "사진누락") return item.status === "완료" && requiredPhotoLabels(item, photos.filter((photo) => photo.storeId === item.storeId)).length > 0;
       if (filter === "미진열") return item.abnormalStatus === "미진열";
       if (filter === "비정상진열") return item.abnormalDisplay === "O";
+      if (filter === "부적격") return getPriceEligibility(item)?.label === "부적격";
       return item.status === filter;
     }), [storeItems, itemQuery, filter, photos, itemSort]);
   const barcodeModalItem = items.find((item) => item.id === barcodeModalItemId);
@@ -1936,7 +1938,7 @@ function App() {
           {itemToolsOpen && (
             <section className="tool-panel">
               <div className="store-filter-sort-row">
-                <FilterBar filter={filter} setFilter={setFilter} values={["전체", "미완료", "완료", "사진누락", "미진열", "비정상진열"]} />
+                <FilterBar filter={filter} setFilter={setFilter} values={["전체", "미완료", "완료", "사진누락", "미진열", "비정상진열", "부적격"]} />
                 <label className="sort-control sort-only">
                   <select value={itemSort} onChange={(event) => setItemSort(event.target.value as ItemSort)}>
                     <option>기본 순</option>
@@ -2498,6 +2500,7 @@ function getPriceEligibility(item: SurveyItem) {
   if (item.barcodeRegistered === "X") return { label: "부적격", reason: "바코드 미등록" };
   if (item.memo.includes("판매처 폐점")) return { label: "부적격", reason: "폐업" };
   if (item.memo.includes("임시휴업")) return { label: "부적격", reason: "임시휴업" };
+  if (item.memo.includes("가격표 없음")) return { label: "부적격", reason: "가격표 없음" };
   const salePrice = getSurveySalePrice(item);
   if (item.basePrice === null || salePrice === null) return undefined;
   if (salePrice < item.basePrice) return { label: "부적격", reason: "저가판매" };
