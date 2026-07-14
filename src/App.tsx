@@ -1931,6 +1931,7 @@ function App() {
           </div>
           <div className="sticky-search item-search">
             <SearchBox value={itemQuery} onChange={setItemQuery} placeholder="품목명 / 바코드 / 품목코드 / 담당자" />
+            <span className="item-result-count"> {visibleStoreItems.length.toLocaleString()}건 </span>
             <button className="tool-toggle" onClick={() => setItemToolsOpen((value) => !value)} aria-expanded={itemToolsOpen}>
               <SlidersHorizontal size={18} /> 필터 {itemToolsOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
             </button>
