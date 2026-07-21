@@ -1727,24 +1727,41 @@ function App() {
               <li>새 자료를 다시 분석하면 기존 입력 데이터가 초기화될 수 있으니 필요하면 먼저 전체 백업을 내려받아 주세요.</li>
             </ul>
           </section>
-          <section className="panel upload-panel">
-            <label className="file-card restore-card">
-              <strong>백업 JSON으로 복원</strong>
-              <input type="file" accept="application/json,.json" onChange={(event) => event.target.files?.[0] && restoreBackup(event.target.files[0])} />
-              <span>기존 백업 파일이 있으면 엑셀 재업로드 없이 바로 복원할 수 있습니다.</span>
-            </label>
-            <label className="file-card">
-              <strong>1. 조사표 엑셀</strong>
-              <input type="file" accept=".xlsx,.xls" onChange={(event) => setSurveyFile(event.target.files?.[0] ?? null)} />
-              <span>{surveyFile?.name ?? "선택된 파일 없음"}</span>
-            </label>
-            <label className="file-card">
-              <strong>2. 업체 연락처 엑셀</strong>
-              <input type="file" accept=".xlsx,.xls" onChange={(event) => setContactFile(event.target.files?.[0] ?? null)} />
-              <span>{contactFile?.name ?? "선택된 파일 없음"}</span>
-            </label>
-            <button className="primary analyze-button" onClick={analyzeUploadedFiles} disabled={isAnalyzing}>{isAnalyzing ? "자료 분석 중..." : "자료 분석 시작"}</button>
-            {uploadMessage && <p className="notice">{uploadMessage}</p>}
+          <section className="upload-choice">
+            <div className="panel upload-panel restore-panel">
+              <div className="upload-section-head">
+                <span>기존 작업 이어하기</span>
+                <strong>백업 파일 복원</strong>
+                <p>이전에 내려받은 백업 JSON이 있으면 엑셀 파일을 다시 넣지 않아도 됩니다.</p>
+              </div>
+              <label className="file-card restore-card">
+                <strong>백업 JSON 선택</strong>
+                <input type="file" accept="application/json,.json" onChange={(event) => event.target.files?.[0] && restoreBackup(event.target.files[0])} />
+                <span>백업에 포함된 지역, 매장, 물품, 사진, 입력값만 복원됩니다.</span>
+              </label>
+            </div>
+
+            <div className="upload-divider"><span>또는</span></div>
+
+            <div className="panel upload-panel">
+              <div className="upload-section-head">
+                <span>새 작업 시작</span>
+                <strong>엑셀 자료 분석</strong>
+                <p>처음 세팅하거나 새 조사표로 다시 작업환경을 만들 때 사용합니다.</p>
+              </div>
+              <label className="file-card">
+                <strong>1. 조사표 엑셀</strong>
+                <input type="file" accept=".xlsx,.xls" onChange={(event) => setSurveyFile(event.target.files?.[0] ?? null)} />
+                <span>{surveyFile?.name ?? "선택된 파일 없음"}</span>
+              </label>
+              <label className="file-card">
+                <strong>2. 업체 연락처 엑셀</strong>
+                <input type="file" accept=".xlsx,.xls" onChange={(event) => setContactFile(event.target.files?.[0] ?? null)} />
+                <span>{contactFile?.name ?? "선택된 파일 없음"}</span>
+              </label>
+              <button className="primary analyze-button" onClick={analyzeUploadedFiles} disabled={isAnalyzing}>{isAnalyzing ? "자료 분석 중..." : "자료 분석 시작"}</button>
+              {uploadMessage && <p className="notice">{uploadMessage}</p>}
+            </div>
           </section>
           <button className="continue-button" disabled={!regions.length} onClick={() => setView("regions")}>지역리스트로 이동</button>
         </main>
