@@ -1472,16 +1472,21 @@ function App() {
     const sourceItems = scopeRegion ? items.filter((item) => item.region === scopeRegion) : items;
     const sourcePhotos = scopeRegion ? (scopeRegion === currentRegion ? photos : await getPhotosByRegion(scopeRegion)) : await getPhotos();
     const sourceRegions = scopeRegion ? regions.filter((candidate) => candidate.name === scopeRegion) : regions;
-    await exportBackup(scopeRegion, sourceRegions, sourceStores, sourceItems, sourcePhotos, settings);
+    const currentBarcodeIndex = await getBarcodeIndex();
+    await exportBackup(scopeRegion, sourceRegions, sourceStores, sourceItems, sourcePhotos, settings, currentBarcodeIndex);
   }
 
   async function restoreBackup(file: File) {
     const payload = JSON.parse(await file.text()) as BackupPayload;
     const restoredPhotos = await Promise.all(payload.photos.map(async ({ dataUrl, ...photo }) => ({ ...photo, blob: await dataUrlToBlob(dataUrl) })));
+    const existingBarcodeIndex = await getBarcodeIndex();
+    const mergedBarcodeIndex = { ...existingBarcodeIndex, ...(payload.barcodeIndex ?? {}) };
     if (payload.scope === "all") {
       if (!confirm("현재 기기의 모든 자료와 입력값, 사진을 백업 파일 내용으로 덮어씁니다. 계속할까요?")) return;
       const nextSettings = { ...payload.settings, currentRegion: payload.settings.currentRegion ?? payload.regions[0]?.name };
       await importAllData(payload.regions, payload.stores, payload.items, restoredPhotos, nextSettings);
+      await saveBarcodeIndex(mergedBarcodeIndex);
+      setBarcodeIndex(mergedBarcodeIndex);
       await refresh(nextSettings.currentRegion);
       setView("regions");
       return;
@@ -1490,6 +1495,8 @@ function App() {
     if (!region) return;
     if (!confirm(`${region} 지역 데이터를 백업 파일 내용으로 덮어씁니다. 계속할까요?`)) return;
     await importRegionData(region, payload.stores, payload.items, restoredPhotos);
+    await saveBarcodeIndex(mergedBarcodeIndex);
+    setBarcodeIndex(mergedBarcodeIndex);
     await updateSettings({ currentRegion: region });
     await refresh(region);
     setView("regions");

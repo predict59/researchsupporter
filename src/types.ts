@@ -124,5 +124,6 @@ export type BackupPayload = {
   stores: SurveyStore[];
   items: SurveyItem[];
   photos: Array<Omit<SurveyPhoto, "blob"> & { dataUrl: string }>;
+  barcodeIndex?: Record<string, string>;
   settings: AppSettings;
 };

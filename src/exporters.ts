@@ -154,7 +154,15 @@ const blobToDataUrl = (blob: Blob) =>
     reader.readAsDataURL(blob);
   });
 
-export async function exportBackup(region: string | undefined, regions: Region[], stores: SurveyStore[], items: SurveyItem[], photos: SurveyPhoto[], settings: AppSettings) {
+export async function exportBackup(
+  region: string | undefined,
+  regions: Region[],
+  stores: SurveyStore[],
+  items: SurveyItem[],
+  photos: SurveyPhoto[],
+  settings: AppSettings,
+  barcodeIndex: Record<string, string> = {},
+) {
   const photoPayload = await Promise.all(
     photos.map(async ({ blob, ...photo }) => ({
       ...photo,
@@ -170,6 +178,7 @@ export async function exportBackup(region: string | undefined, regions: Region[]
     stores,
     items,
     photos: photoPayload,
+    barcodeIndex,
     settings,
   };
   const suffix = region ? safeFilePart(region) : "전체";
