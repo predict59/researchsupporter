@@ -1,8 +1,8 @@
 import { Camera, CheckCircle2, ChevronDown, ChevronUp, Download, Menu, MoreVertical, Phone, SlidersHorizontal, Search, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import { clearAllData, deletePhoto, getBarcodeIndex, getItems, getPhotos, getPhotosByRegion, getPhotosByStore, getRegions, getSettings, getStores, importAllData, importRegionData, now, putItem, putPhoto, putStore, saveBarcodeIndex, saveParsedData, saveSettings, today, uid } from "./db";
-import { extractBarcodeImages, extractProductImageReferences } from "./barcodeImages";
+import { clearAllData, deletePhoto, getBarcodeIndex, getItems, getPhotos, getPhotosByRegion, getPhotosByStore, getRegions, getSettings, getStores, importAllData, now, putItem, putPhoto, putStore, saveBarcodeIndex, saveParsedData, saveSettings, today, uid } from "./db";
+import { extractProductImageReferences } from "./barcodeImages";
 import type { ProductImageReference } from "./barcodeImages";
 import { parseContactRows, parseSurveyWorkbook, mergeContacts, rebuildStoresAndRegions } from "./excel";
 import { dataUrlToBlob, exportBackup, exportRegionExcel, exportRegionZip } from "./exporters";
@@ -531,7 +531,6 @@ function App() {
   const [imagePreview, setImagePreview] = useState<{ src: string; title: string } | null>(null);
   const [surveyFile, setSurveyFile] = useState<File | null>(null);
   const [contactFile, setContactFile] = useState<File | null>(null);
-  const [barcodeFile, setBarcodeFile] = useState<File | null>(null);
   const [uploadMessage, setUploadMessage] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -955,12 +954,6 @@ function App() {
     window.setTimeout(() => document.getElementById(`store-card-${selectedStoreId}`)?.scrollIntoView({ block: "center", behavior: "smooth" }), 80);
   }, [view, selectedStoreId, visibleRegionStores.length]);
 
-  async function updateSettings(patch: Partial<AppSettings>) {
-    const next = { ...settings, ...patch };
-    setSettingsState(next);
-    await saveSettings(next);
-  }
-
   async function analyzeUploadedFiles() {
     if (!surveyFile || !contactFile) {
       setUploadMessage("조사표와 업체 연락처 엑셀 파일을 선택해 주세요.");
@@ -992,18 +985,9 @@ function App() {
         const first = parsedItems.find((item) => item.storeId === store.id);
         return first ? { ...store, storeAddress: first.storeAddress || store.storeAddress, storeName: first.storeName || store.storeName } : store;
       });
-      let nextBarcodeIndex: BarcodeImageIndex = {};
-      let extractedBarcodes = 0;
-      if (barcodeFile) {
-        setUploadMessage("바코드 이미지를 추출하고 있습니다.");
-        nextBarcodeIndex = await extractBarcodeImages(barcodeFile);
-        extractedBarcodes = Object.keys(nextBarcodeIndex).length;
-      }
       await clearAllData();
       await saveParsedData(rebuilt.regions, parsedStores, parsedItems);
-      await saveBarcodeIndex(nextBarcodeIndex);
-      setBarcodeIndex((previous) => ({ ...previous, ...nextBarcodeIndex }));
-      setUploadMessage(`분석 완료: 전체 품목 ${parsedItems.length.toLocaleString()}개 / 지역 ${rebuilt.regions.length}개 / 매장 ${parsedStores.length}개 / 연락처 매칭 ${Math.max(0, matched)}개 / 바코드 이미지 ${extractedBarcodes.toLocaleString()}개`);
+      setUploadMessage(`분석 완료: 전체 품목 ${parsedItems.length.toLocaleString()}개 / 지역 ${rebuilt.regions.length}개 / 매장 ${parsedStores.length}개 / 연락처 매칭 ${Math.max(0, matched)}개`);
       await refresh(undefined);
       setView("regions");
     } catch (error) {
@@ -1546,11 +1530,11 @@ function App() {
     }
     const region = payload.region ?? payload.regions[0]?.name;
     if (!region) return;
-    if (!confirm(`${region} 지역 데이터를 백업 파일 내용으로 복원합니다. 계속할까요?`)) return;
-    await importRegionData(region, enrichedPayload.regions, enrichedPayload.stores, enrichedPayload.items, restoredPhotos);
+    if (!confirm(`백업 파일에 포함된 ${region} 데이터만 남기고 복원합니다. 기존 다른 지역 데이터는 제거됩니다. 계속할까요?`)) return;
+    const nextSettings = { ...payload.settings, currentRegion: region };
+    await importAllData(enrichedPayload.regions, enrichedPayload.stores, enrichedPayload.items, restoredPhotos, nextSettings);
     await saveBarcodeIndex(mergedBarcodeIndex);
     setBarcodeIndex((previous) => ({ ...previous, ...mergedBarcodeIndex }));
-    await updateSettings({ currentRegion: region });
     await refresh(region);
     setView("regions");
   }
@@ -1739,11 +1723,16 @@ function App() {
             <p>조사표와 업체 연락처 엑셀 파일을 입력하면 지역, 매장, 물품 목록이 이 기기의 브라우저 저장공간에 생성됩니다. 서버 DB와 자동 동기화되지 않으므로 다른 기기에서 이어서 작업하려면 전체 백업 파일로 복원해 주세요.</p>
             <ul className="upload-notes">
               <li>조사표와 업체 연락처는 필수입니다.</li>
-              <li>바코드 이미지는 기본 참조자료를 사용합니다. 별도 파일은 필요한 경우에만 추가로 입력하세요.</li>
+              <li>바코드 이미지는 앱에 포함된 기본 참조자료를 사용합니다.</li>
               <li>새 자료를 다시 분석하면 기존 입력 데이터가 초기화될 수 있으니 필요하면 먼저 전체 백업을 내려받아 주세요.</li>
             </ul>
           </section>
           <section className="panel upload-panel">
+            <label className="file-card restore-card">
+              <strong>백업 JSON으로 복원</strong>
+              <input type="file" accept="application/json,.json" onChange={(event) => event.target.files?.[0] && restoreBackup(event.target.files[0])} />
+              <span>기존 백업 파일이 있으면 엑셀 재업로드 없이 바로 복원할 수 있습니다.</span>
+            </label>
             <label className="file-card">
               <strong>1. 조사표 엑셀</strong>
               <input type="file" accept=".xlsx,.xls" onChange={(event) => setSurveyFile(event.target.files?.[0] ?? null)} />
@@ -1753,11 +1742,6 @@ function App() {
               <strong>2. 업체 연락처 엑셀</strong>
               <input type="file" accept=".xlsx,.xls" onChange={(event) => setContactFile(event.target.files?.[0] ?? null)} />
               <span>{contactFile?.name ?? "선택된 파일 없음"}</span>
-            </label>
-            <label className="file-card">
-              <strong>3. 바코드 이미지 엑셀 선택</strong>
-              <input type="file" accept=".xlsx,.xls" onChange={(event) => setBarcodeFile(event.target.files?.[0] ?? null)} />
-              <span>{barcodeFile?.name ?? "선택하지 않아도 내장 바코드 이미지를 사용합니다."}</span>
             </label>
             <button className="primary analyze-button" onClick={analyzeUploadedFiles} disabled={isAnalyzing}>{isAnalyzing ? "자료 분석 중..." : "자료 분석 시작"}</button>
             {uploadMessage && <p className="notice">{uploadMessage}</p>}
