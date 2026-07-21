@@ -115,7 +115,7 @@ const PHOTO_QUALITY_STEPS = [0.72, 0.64, 0.56, 0.48, 0.4, 0.32];
 const PRICE_DIFF_WARN_PERCENT = 30;
 const TARGET_MAP_URL = "https://www.google.com/maps/d/u/1/edit?mid=1ej99Lo6WS4GROBCQPr0a66MhQR_vXuM&usp=sharing";
 const PRODUCT_IMAGE_REFERENCE_FILE = `${import.meta.env.BASE_URL}data/barcode_product_reference.xlsx`;
-const BARCODE_IMAGE_INDEX_FILE = `${import.meta.env.BASE_URL}data/barcode_image_index.json`;
+const BARCODE_IMAGE_INDEX_FILE = `${import.meta.env.BASE_URL}data/barcode_image_index.json?v=20260721-barcode-number`;
 type BarcodeImageIndex = Record<string, string>;
 type ProductImageReferenceIndex = { byItemNo: Record<string, ProductImageReference>; byBarcode: Record<string, ProductImageReference> };
 type PriceCandidate = { value: number; score: number; source: "comma" | "plain" };
@@ -673,13 +673,13 @@ function App() {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      fetch(BARCODE_IMAGE_INDEX_FILE, { cache: "force-cache" })
+      fetch(BARCODE_IMAGE_INDEX_FILE, { cache: "no-cache" })
         .then((response) => response.ok ? response.json() as Promise<BarcodeImageIndex> : {})
         .catch(() => ({})),
       getBarcodeIndex().catch(() => ({})),
     ])
       .then(([bundled, saved]) => {
-        if (!cancelled) setBarcodeIndex({ ...(bundled ?? {}), ...(saved as BarcodeImageIndex) });
+        if (!cancelled) setBarcodeIndex({ ...(saved as BarcodeImageIndex), ...(bundled ?? {}) });
       })
       .catch(() => {
         if (!cancelled) setBarcodeIndex({});
@@ -1523,7 +1523,7 @@ function App() {
       const nextSettings = { ...payload.settings, currentRegion: payload.settings.currentRegion ?? enrichedPayload.regions[0]?.name };
       await importAllData(enrichedPayload.regions, enrichedPayload.stores, enrichedPayload.items, restoredPhotos, nextSettings);
       await saveBarcodeIndex(mergedBarcodeIndex);
-      setBarcodeIndex((previous) => ({ ...previous, ...mergedBarcodeIndex }));
+      setBarcodeIndex((previous) => ({ ...mergedBarcodeIndex, ...previous }));
       await refresh(nextSettings.currentRegion);
       setView("regions");
       return;
@@ -1534,7 +1534,7 @@ function App() {
     const nextSettings = { ...payload.settings, currentRegion: region };
     await importAllData(enrichedPayload.regions, enrichedPayload.stores, enrichedPayload.items, restoredPhotos, nextSettings);
     await saveBarcodeIndex(mergedBarcodeIndex);
-    setBarcodeIndex((previous) => ({ ...previous, ...mergedBarcodeIndex }));
+    setBarcodeIndex((previous) => ({ ...mergedBarcodeIndex, ...previous }));
     await refresh(region);
     setView("regions");
   }
