@@ -1534,7 +1534,8 @@ function App() {
     const existingBarcodeIndex = await getBarcodeIndex();
     const mergedBarcodeIndex = mergeBarcodeIndexes(existingBarcodeIndex, payload.barcodeIndex, items, payload.items);
     const enrichedPayload = enrichBackupBaseData(payload);
-    if (payload.scope === "all") {
+    const isAllBackup = payload.scope === "all" || !payload.region;
+    if (isAllBackup) {
       if (!confirm("백업 파일에 포함된 지역, 매장, 물품과 입력값으로 복원합니다. 계속할까요?")) return;
       const nextSettings = { ...payload.settings, currentRegion: payload.settings.currentRegion ?? enrichedPayload.regions[0]?.name };
       await importAllData(enrichedPayload.regions, enrichedPayload.stores, enrichedPayload.items, restoredPhotos, nextSettings);
