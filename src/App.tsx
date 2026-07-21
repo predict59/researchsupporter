@@ -115,6 +115,7 @@ const PHOTO_QUALITY_STEPS = [0.72, 0.64, 0.56, 0.48, 0.4, 0.32];
 const PRICE_DIFF_WARN_PERCENT = 30;
 const TARGET_MAP_URL = "https://www.google.com/maps/d/u/1/edit?mid=1ej99Lo6WS4GROBCQPr0a66MhQR_vXuM&usp=sharing";
 const PRODUCT_IMAGE_REFERENCE_FILE = `${import.meta.env.BASE_URL}data/barcode_product_reference.xlsx`;
+const BARCODE_IMAGE_INDEX_FILE = `${import.meta.env.BASE_URL}data/barcode_image_index.json`;
 type BarcodeImageIndex = Record<string, string>;
 type ProductImageReferenceIndex = { byItemNo: Record<string, ProductImageReference>; byBarcode: Record<string, ProductImageReference> };
 type PriceCandidate = { value: number; score: number; source: "comma" | "plain" };
@@ -194,7 +195,7 @@ const formatDistance = (km?: number) => {
   return km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(km < 10 ? 1 : 0)}km`;
 };
 const barcodeImageSrc = (item: SurveyItem, index: BarcodeImageIndex) => {
-  const path = index[item.itemNo.trim()];
+  const path = index[onlyDigits(item.barcode)];
   if (!path) return "";
   return path.startsWith("data:") ? path : `${import.meta.env.BASE_URL}${path}`;
 };
@@ -672,9 +673,14 @@ function App() {
   }, [view, workspaceMode, canUseStoreMap]);
   useEffect(() => {
     let cancelled = false;
-    getBarcodeIndex()
-      .then((data) => {
-        if (!cancelled) setBarcodeIndex(data as BarcodeImageIndex);
+    Promise.all([
+      fetch(BARCODE_IMAGE_INDEX_FILE, { cache: "force-cache" })
+        .then((response) => response.ok ? response.json() as Promise<BarcodeImageIndex> : {})
+        .catch(() => ({})),
+      getBarcodeIndex().catch(() => ({})),
+    ])
+      .then(([bundled, saved]) => {
+        if (!cancelled) setBarcodeIndex({ ...(bundled ?? {}), ...(saved as BarcodeImageIndex) });
       })
       .catch(() => {
         if (!cancelled) setBarcodeIndex({});
@@ -996,7 +1002,7 @@ function App() {
       await clearAllData();
       await saveParsedData(rebuilt.regions, parsedStores, parsedItems);
       await saveBarcodeIndex(nextBarcodeIndex);
-      setBarcodeIndex(nextBarcodeIndex);
+      setBarcodeIndex((previous) => ({ ...previous, ...nextBarcodeIndex }));
       setUploadMessage(`분석 완료: 전체 품목 ${parsedItems.length.toLocaleString()}개 / 지역 ${rebuilt.regions.length}개 / 매장 ${parsedStores.length}개 / 연락처 매칭 ${Math.max(0, matched)}개 / 바코드 이미지 ${extractedBarcodes.toLocaleString()}개`);
       await refresh(undefined);
       setView("regions");
@@ -1476,18 +1482,11 @@ function App() {
     await exportBackup(scopeRegion, sourceRegions, sourceStores, sourceItems, sourcePhotos, settings, currentBarcodeIndex);
   }
 
-  function mergeBarcodeIndexes(existing: BarcodeImageIndex, incoming: BarcodeImageIndex | undefined, baseItems: SurveyItem[], backupItems: SurveyItem[]) {
-    const barcodeToItemNo = new Map<string, string>();
-    [...baseItems, ...backupItems].forEach((item) => {
-      const itemNo = item.itemNo.trim();
-      const barcode = onlyDigits(item.barcode);
-      if (itemNo && barcode) barcodeToItemNo.set(barcode, itemNo);
-    });
+  function mergeBarcodeIndexes(existing: BarcodeImageIndex, incoming: BarcodeImageIndex | undefined) {
     const normalizedIncoming: BarcodeImageIndex = {};
     Object.entries(incoming ?? {}).forEach(([rawKey, value]) => {
-      const key = rawKey.trim();
-      const byBarcode = barcodeToItemNo.get(onlyDigits(key));
-      normalizedIncoming[byBarcode || key] = value;
+      const barcode = onlyDigits(rawKey);
+      if (barcode) normalizedIncoming[barcode] = value;
     });
     return { ...normalizedIncoming, ...existing };
   }
@@ -1532,7 +1531,7 @@ function App() {
     const payload = JSON.parse(await file.text()) as BackupPayload;
     const restoredPhotos = await Promise.all(payload.photos.map(async ({ dataUrl, ...photo }) => ({ ...photo, blob: await dataUrlToBlob(dataUrl) })));
     const existingBarcodeIndex = await getBarcodeIndex();
-    const mergedBarcodeIndex = mergeBarcodeIndexes(existingBarcodeIndex, payload.barcodeIndex, items, payload.items);
+    const mergedBarcodeIndex = mergeBarcodeIndexes(existingBarcodeIndex, payload.barcodeIndex);
     const enrichedPayload = enrichBackupBaseData(payload);
     const isAllBackup = payload.scope === "all" || !payload.region;
     if (isAllBackup) {
@@ -1540,7 +1539,7 @@ function App() {
       const nextSettings = { ...payload.settings, currentRegion: payload.settings.currentRegion ?? enrichedPayload.regions[0]?.name };
       await importAllData(enrichedPayload.regions, enrichedPayload.stores, enrichedPayload.items, restoredPhotos, nextSettings);
       await saveBarcodeIndex(mergedBarcodeIndex);
-      setBarcodeIndex(mergedBarcodeIndex);
+      setBarcodeIndex((previous) => ({ ...previous, ...mergedBarcodeIndex }));
       await refresh(nextSettings.currentRegion);
       setView("regions");
       return;
@@ -1550,7 +1549,7 @@ function App() {
     if (!confirm(`${region} 지역 데이터를 백업 파일 내용으로 복원합니다. 계속할까요?`)) return;
     await importRegionData(region, enrichedPayload.regions, enrichedPayload.stores, enrichedPayload.items, restoredPhotos);
     await saveBarcodeIndex(mergedBarcodeIndex);
-    setBarcodeIndex(mergedBarcodeIndex);
+    setBarcodeIndex((previous) => ({ ...previous, ...mergedBarcodeIndex }));
     await updateSettings({ currentRegion: region });
     await refresh(region);
     setView("regions");
@@ -1740,7 +1739,7 @@ function App() {
             <p>조사표와 업체 연락처 엑셀 파일을 입력하면 지역, 매장, 물품 목록이 이 기기의 브라우저 저장공간에 생성됩니다. 서버 DB와 자동 동기화되지 않으므로 다른 기기에서 이어서 작업하려면 전체 백업 파일로 복원해 주세요.</p>
             <ul className="upload-notes">
               <li>조사표와 업체 연락처는 필수입니다.</li>
-              <li>바코드 이미지 파일은 POS 확인용 바코드 모달에 사용됩니다.</li>
+              <li>바코드 이미지는 기본 참조자료를 사용합니다. 별도 파일은 필요한 경우에만 추가로 입력하세요.</li>
               <li>새 자료를 다시 분석하면 기존 입력 데이터가 초기화될 수 있으니 필요하면 먼저 전체 백업을 내려받아 주세요.</li>
             </ul>
           </section>
@@ -1756,9 +1755,9 @@ function App() {
               <span>{contactFile?.name ?? "선택된 파일 없음"}</span>
             </label>
             <label className="file-card">
-              <strong>3. 바코드 이미지 엑셀</strong>
+              <strong>3. 바코드 이미지 엑셀 선택</strong>
               <input type="file" accept=".xlsx,.xls" onChange={(event) => setBarcodeFile(event.target.files?.[0] ?? null)} />
-              <span>{barcodeFile?.name ?? "선택하지 않으면 바코드 이미지는 표시되지 않습니다."}</span>
+              <span>{barcodeFile?.name ?? "선택하지 않아도 내장 바코드 이미지를 사용합니다."}</span>
             </label>
             <button className="primary analyze-button" onClick={analyzeUploadedFiles} disabled={isAnalyzing}>{isAnalyzing ? "자료 분석 중..." : "자료 분석 시작"}</button>
             {uploadMessage && <p className="notice">{uploadMessage}</p>}
