@@ -194,7 +194,7 @@ const formatDistance = (km?: number) => {
   return km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(km < 10 ? 1 : 0)}km`;
 };
 const barcodeImageSrc = (item: SurveyItem, index: BarcodeImageIndex) => {
-  const path = index[item.itemNo];
+  const path = index[item.itemNo.trim()];
   if (!path) return "";
   return path.startsWith("data:") ? path : `${import.meta.env.BASE_URL}${path}`;
 };
@@ -1476,15 +1476,68 @@ function App() {
     await exportBackup(scopeRegion, sourceRegions, sourceStores, sourceItems, sourcePhotos, settings, currentBarcodeIndex);
   }
 
+  function mergeBarcodeIndexes(existing: BarcodeImageIndex, incoming: BarcodeImageIndex | undefined, baseItems: SurveyItem[], backupItems: SurveyItem[]) {
+    const barcodeToItemNo = new Map<string, string>();
+    [...baseItems, ...backupItems].forEach((item) => {
+      const itemNo = item.itemNo.trim();
+      const barcode = onlyDigits(item.barcode);
+      if (itemNo && barcode) barcodeToItemNo.set(barcode, itemNo);
+    });
+    const normalizedIncoming: BarcodeImageIndex = {};
+    Object.entries(incoming ?? {}).forEach(([rawKey, value]) => {
+      const key = rawKey.trim();
+      const byBarcode = barcodeToItemNo.get(onlyDigits(key));
+      normalizedIncoming[byBarcode || key] = value;
+    });
+    return { ...normalizedIncoming, ...existing };
+  }
+
+  function enrichBackupBaseData(payload: BackupPayload) {
+    const currentRegionByName = new Map(regions.map((region) => [region.name, region]));
+    const currentItemByNo = new Map(items.map((item) => [item.itemNo.trim(), item]));
+    const enrichedRegions = payload.regions.map((region) => {
+      const current = currentRegionByName.get(region.name);
+      return {
+        ...region,
+        department: region.department || current?.department,
+        city: region.city || current?.city,
+        areaSummary: region.areaSummary || current?.areaSummary,
+        updatedAt: region.updatedAt || current?.updatedAt || now(),
+      };
+    });
+    const enrichedRegionByName = new Map(enrichedRegions.map((region) => [region.name, region]));
+    const enrichedStores = payload.stores.map((store) => {
+      const region = enrichedRegionByName.get(store.region);
+      return {
+        ...store,
+        department: store.department || region?.department,
+        city: store.city || region?.city,
+      };
+    });
+    const enrichedItems = payload.items.map((item) => {
+      const region = enrichedRegionByName.get(item.region);
+      const current = currentItemByNo.get(item.itemNo.trim());
+      return {
+        ...item,
+        department: item.department || region?.department || current?.department,
+        city: item.city || region?.city || current?.city,
+        detailAddress: item.detailAddress || current?.detailAddress,
+        productImageUrl: item.productImageUrl || current?.productImageUrl,
+      };
+    });
+    return { regions: enrichedRegions, stores: enrichedStores, items: enrichedItems };
+  }
+
   async function restoreBackup(file: File) {
     const payload = JSON.parse(await file.text()) as BackupPayload;
     const restoredPhotos = await Promise.all(payload.photos.map(async ({ dataUrl, ...photo }) => ({ ...photo, blob: await dataUrlToBlob(dataUrl) })));
     const existingBarcodeIndex = await getBarcodeIndex();
-    const mergedBarcodeIndex = { ...existingBarcodeIndex, ...(payload.barcodeIndex ?? {}) };
+    const mergedBarcodeIndex = mergeBarcodeIndexes(existingBarcodeIndex, payload.barcodeIndex, items, payload.items);
+    const enrichedPayload = enrichBackupBaseData(payload);
     if (payload.scope === "all") {
-      if (!confirm("현재 기기의 모든 자료와 입력값, 사진을 백업 파일 내용으로 덮어씁니다. 계속할까요?")) return;
-      const nextSettings = { ...payload.settings, currentRegion: payload.settings.currentRegion ?? payload.regions[0]?.name };
-      await importAllData(payload.regions, payload.stores, payload.items, restoredPhotos, nextSettings);
+      if (!confirm("백업 파일에 포함된 지역, 매장, 물품과 입력값으로 복원합니다. 계속할까요?")) return;
+      const nextSettings = { ...payload.settings, currentRegion: payload.settings.currentRegion ?? enrichedPayload.regions[0]?.name };
+      await importAllData(enrichedPayload.regions, enrichedPayload.stores, enrichedPayload.items, restoredPhotos, nextSettings);
       await saveBarcodeIndex(mergedBarcodeIndex);
       setBarcodeIndex(mergedBarcodeIndex);
       await refresh(nextSettings.currentRegion);
@@ -1493,8 +1546,8 @@ function App() {
     }
     const region = payload.region ?? payload.regions[0]?.name;
     if (!region) return;
-    if (!confirm(`${region} 지역 데이터를 백업 파일 내용으로 덮어씁니다. 계속할까요?`)) return;
-    await importRegionData(region, payload.stores, payload.items, restoredPhotos);
+    if (!confirm(`${region} 지역 데이터를 백업 파일 내용으로 복원합니다. 계속할까요?`)) return;
+    await importRegionData(region, enrichedPayload.regions, enrichedPayload.stores, enrichedPayload.items, restoredPhotos);
     await saveBarcodeIndex(mergedBarcodeIndex);
     setBarcodeIndex(mergedBarcodeIndex);
     await updateSettings({ currentRegion: region });

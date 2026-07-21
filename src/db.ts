@@ -111,7 +111,7 @@ export async function deletePhoto(id: string) {
   await (await dbPromise).delete("photos", id);
 }
 
-export async function importRegionData(region: string, stores: SurveyStore[], items: SurveyItem[], photos: SurveyPhoto[]) {
+export async function importRegionData(region: string, regions: Region[], stores: SurveyStore[], items: SurveyItem[], photos: SurveyPhoto[]) {
   const db = await dbPromise;
   const tx = db.transaction(["regions", "stores", "items", "photos"], "readwrite");
   const oldStores = (await tx.objectStore("stores").index("region").getAll(region)) as SurveyStore[];
@@ -122,7 +122,7 @@ export async function importRegionData(region: string, stores: SurveyStore[], it
     ...oldItems.map((item) => tx.objectStore("items").delete(item.id)),
     ...oldPhotos.map((photo) => tx.objectStore("photos").delete(photo.id)),
   ]);
-  await tx.objectStore("regions").put({ name: region, updatedAt: now() });
+  await tx.objectStore("regions").put(regions.find((candidate) => candidate.name === region) ?? { name: region, updatedAt: now() });
   await Promise.all([
     ...stores.map((store) => tx.objectStore("stores").put(store)),
     ...items.map((item) => tx.objectStore("items").put(item)),
