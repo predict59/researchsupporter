@@ -2104,7 +2104,17 @@ function App() {
               }
               return (
                 <article id={`item-card-${item.id}`} className={`card compact item-card ${selectedItemId === item.id ? "focused" : ""} ${item.status === "완료" ? "completed" : ""}`} key={item.id}>
-                  <div className="item-card-head"><h2 className="item-title"><span className="item-code">{item.itemNo}</span><button type="button" className="product-name-button" title={`${item.productName} · 눌러서 전체 이름 보기`} onClick={() => setProductNamePreview(item.productName)}>{item.productName}</button><a className="image-search-button" href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(item.productName)}`} target="_blank" aria-label={`${item.productName} 이미지 검색`} onClick={(event) => event.stopPropagation()}><Search size={15} /></a></h2><div className="item-badge-stack">{item.status !== "완료" && <Badge text={item.status} />}{itemPhotoMissing && <span className="badge badge-photo-missing">사진누락</span>}</div></div>
+                  <div className="item-card-head">
+                    <h2 className="item-title">
+                      <span className="item-code">{item.itemNo}</span>
+                      <button type="button" className="product-name-button" title={`${item.productName} · 눌러서 전체 이름 보기`} onClick={() => setProductNamePreview(item.productName)}>{item.productName}</button>
+                    </h2>
+                    <div className="item-badge-stack">
+                      <a className="image-search-button" href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(item.productName)}`} target="_blank" aria-label={`${item.productName} 이미지 검색`} onClick={(event) => event.stopPropagation()}><Search size={15} /></a>
+                      {item.status !== "완료" && <Badge text={item.status} />}
+                      {itemPhotoMissing && <span className="badge badge-photo-missing">사진누락</span>}
+                    </div>
+                  </div>
                   <div className="item-card-body">
                     <div className="item-reference-images">
                       <ReferenceImage
@@ -2353,11 +2363,11 @@ function QuickItemCard({
         <h2 className="item-title">
           <span className="item-code">{item.itemNo}</span>
           <span className="quick-title-text">
-            <span className="quick-product-line"><button type="button" className="product-name-button" title={`${item.productName} · 눌러서 전체 이름 보기`} onClick={onNameClick}>{item.productName}</button><a className="image-search-button" href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(item.productName)}`} target="_blank" aria-label={`${item.productName} 이미지 검색`} onClick={(event) => event.stopPropagation()}><Search size={15} /></a></span>
+            <span className="quick-product-line"><button type="button" className="product-name-button" title={`${item.productName} · 눌러서 전체 이름 보기`} onClick={onNameClick}>{item.productName}</button></span>
             <button type="button" className="quick-barcode-link" onClick={onBarcode}>{item.barcode || "-"}</button>
           </span>
         </h2>
-        <div className="item-badge-stack">{item.status !== "완료" && <Badge text={item.status} />}</div>
+        <div className="item-badge-stack"><a className="image-search-button" href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(item.productName)}`} target="_blank" aria-label={`${item.productName} 이미지 검색`} onClick={(event) => event.stopPropagation()}><Search size={15} /></a>{item.status !== "완료" && <Badge text={item.status} />}</div>
       </div>
       <div className="quick-item-grid">
         <ReferenceImage
