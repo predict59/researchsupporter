@@ -202,6 +202,7 @@ h2 { font-size: 18px; margin: 0 0 10px; letter-spacing: 0; }
   flex-wrap: nowrap;
   align-items: flex-start;
   gap: 5px;
+  width: 100%;
   min-width: 0;
 }
 .item-title > span:not(.item-code) {
@@ -313,14 +314,15 @@ textarea { min-height: 110px; resize: vertical; }
   font-weight: 800;
 }
 .quick-title-text {
-  flex: 1 1 0;
-  width: 0;
+  flex: 1 1 auto;
+  width: auto;
   min-width: 0;
   display: grid;
   gap: 0;
   line-height: 1.12;
 }
 .quick-product-line {
+  width: 100%;
   min-width: 0;
   display: flex;
   align-items: center;
@@ -334,7 +336,7 @@ textarea { min-height: 110px; resize: vertical; }
 }
 .product-name-button {
   display: block;
-  width: 0;
+  width: auto;
   max-width: 100%;
   min-width: 0;
   min-height: 0;
