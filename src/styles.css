@@ -330,6 +330,29 @@ textarea { min-height: 110px; resize: vertical; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.product-name-button {
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  overflow: hidden;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.product-name-button:hover,
+.product-name-button:focus-visible {
+  color: #0f766e;
+  text-decoration: underline;
+  background: transparent;
+}
 .recent-region > div {
   min-width: 0;
   display: flex;
@@ -1719,6 +1742,17 @@ textarea { min-height: 110px; resize: vertical; }
 }
 .image-preview-modal {
   max-width: min(92vw, 560px);
+}
+.product-name-modal {
+  max-width: min(92vw, 520px);
+}
+.product-name-full {
+  margin: 6px 0 2px;
+  color: #17212b;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
 }
 .image-preview-frame {
   display: grid;

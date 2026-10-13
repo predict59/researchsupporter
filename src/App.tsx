@@ -562,8 +562,10 @@ function App() {
   const [barcodeModalItemId, setBarcodeModalItemId] = useState("");
   const [barcodeReturnItemId, setBarcodeReturnItemId] = useState("");
   const [imagePreview, setImagePreview] = useState<{ src: string; title: string } | null>(null);
+  const [productNamePreview, setProductNamePreview] = useState("");
   const [surveyFile, setSurveyFile] = useState<File | null>(null);
   const [contactFile, setContactFile] = useState<File | null>(null);
+  const [fileInputVersion, setFileInputVersion] = useState(0);
   const [uploadMessage, setUploadMessage] = useState("");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -982,6 +984,23 @@ function App() {
     window.setTimeout(() => document.getElementById(`store-card-${selectedStoreId}`)?.scrollIntoView({ block: "center", behavior: "smooth" }), 80);
   }, [view, selectedStoreId, visibleRegionStores.length]);
 
+  async function resetAllDataAndFiles() {
+    if (!confirm("모든 조사 데이터와 선택한 엑셀 파일을 초기화합니다. 계속할까요?")) return;
+    await clearAllData();
+    setSurveyFile(null);
+    setContactFile(null);
+    setFileInputVersion((value) => value + 1);
+    setUploadMessage("");
+    setBarcodeIndex({});
+    setSelectedStoreId("");
+    setSelectedItemId("");
+    setBarcodeModalItemId("");
+    setBarcodeReturnItemId("");
+    setProductNamePreview("");
+    await refresh(undefined);
+    setView("upload");
+  }
+
   async function analyzeUploadedFiles() {
     if (!surveyFile) {
       setUploadMessage("조사표 엑셀 파일을 선택해 주세요.");
@@ -1016,6 +1035,7 @@ function App() {
         return first ? { ...store, storeAddress: first.storeAddress || store.storeAddress, storeName: first.storeName || store.storeName } : store;
       });
       await clearAllData();
+      setBarcodeIndex({});
       await saveParsedData(rebuilt.regions, parsedStores, parsedItems);
       const contactSummary = contactFile
         ? `추가 연락처 매칭 ${Math.max(0, matched)}개`
@@ -1769,7 +1789,7 @@ function App() {
               </div>
               <label className="file-card restore-card">
                 <strong>백업 JSON 선택</strong>
-                <input type="file" accept="application/json,.json" onChange={(event) => event.target.files?.[0] && restoreBackup(event.target.files[0])} />
+                <input key={`restore-${fileInputVersion}`} type="file" accept="application/json,.json" onChange={(event) => event.target.files?.[0] && restoreBackup(event.target.files[0])} />
                 <span>백업에 포함된 지역, 매장, 물품, 사진, 입력값만 복원됩니다.</span>
               </label>
             </div>
@@ -1784,12 +1804,12 @@ function App() {
               </div>
               <label className="file-card">
                 <strong>1. 조사표 엑셀</strong>
-                <input type="file" accept=".xlsx,.xls" onChange={(event) => setSurveyFile(event.target.files?.[0] ?? null)} />
+                <input key={`survey-${fileInputVersion}`} type="file" accept=".xlsx,.xls" onChange={(event) => setSurveyFile(event.target.files?.[0] ?? null)} />
                 <span>{surveyFile?.name ?? "선택된 파일 없음"}</span>
               </label>
               <label className="file-card">
                 <strong>2. 업체 연락처 엑셀 (선택)</strong>
-                <input type="file" accept=".xlsx,.xls" onChange={(event) => setContactFile(event.target.files?.[0] ?? null)} />
+                <input key={`contact-${fileInputVersion}`} type="file" accept=".xlsx,.xls" onChange={(event) => setContactFile(event.target.files?.[0] ?? null)} />
                 <span>{contactFile?.name ?? "별도 연락처 파일이 없으면 선택하지 않아도 됩니다."}</span>
               </label>
               <button className="primary analyze-button" onClick={analyzeUploadedFiles} disabled={isAnalyzing}>{isAnalyzing ? "자료 분석 중..." : "자료 분석 시작"}</button>
@@ -2073,6 +2093,7 @@ function App() {
                     photoMissing={itemPhotoMissing}
                     eligibility={eligibility}
                     onPreview={(src, title) => setImagePreview({ src, title })}
+                    onNameClick={() => setProductNamePreview(item.productName)}
                     onBarcode={() => { setItemNavigationIds(visibleStoreItems.map((candidate) => candidate.id)); setBarcodeModalItemId(item.id); }}
                     onOpenDetail={() => { setBarcodeReturnItemId(""); setItemNavigationIds(visibleStoreItems.map((candidate) => candidate.id)); setSelectedItemId(item.id); setView("item"); }}
                     onPhoto={(type, file) => saveQuickItemPhoto(item, type, file)}
@@ -2083,7 +2104,7 @@ function App() {
               }
               return (
                 <article id={`item-card-${item.id}`} className={`card compact item-card ${selectedItemId === item.id ? "focused" : ""} ${item.status === "완료" ? "completed" : ""}`} key={item.id}>
-                  <div className="item-card-head"><h2 className="item-title"><span className="item-code">{item.itemNo}</span><span>{item.productName}</span><a className="image-search-button" href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(item.productName)}`} target="_blank" aria-label={`${item.productName} 이미지 검색`} onClick={(event) => event.stopPropagation()}><Search size={15} /></a></h2><div className="item-badge-stack">{item.status !== "완료" && <Badge text={item.status} />}{itemPhotoMissing && <span className="badge badge-photo-missing">사진누락</span>}</div></div>
+                  <div className="item-card-head"><h2 className="item-title"><span className="item-code">{item.itemNo}</span><button type="button" className="product-name-button" title={`${item.productName} · 눌러서 전체 이름 보기`} onClick={() => setProductNamePreview(item.productName)}>{item.productName}</button><a className="image-search-button" href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(item.productName)}`} target="_blank" aria-label={`${item.productName} 이미지 검색`} onClick={(event) => event.stopPropagation()}><Search size={15} /></a></h2><div className="item-badge-stack">{item.status !== "완료" && <Badge text={item.status} />}{itemPhotoMissing && <span className="badge badge-photo-missing">사진누락</span>}</div></div>
                   <div className="item-card-body">
                     <div className="item-reference-images">
                       <ReferenceImage
@@ -2143,7 +2164,7 @@ function App() {
             <article className="panel">
               <h2>초기화</h2>
               <p className="muted">기기 안의 IndexedDB 조사 데이터를 모두 삭제합니다.</p>
-            <button className="danger" onClick={async () => { if (confirm("모든 IndexedDB 데이터를 삭제합니다. 계속할까요?")) { await clearAllData(); await refresh(undefined); setView("upload"); } }}>전체 데이터 초기화</button>
+            <button className="danger" onClick={resetAllDataAndFiles}>전체 데이터 초기화</button>
             </article>
           </section>
         </main>
@@ -2163,6 +2184,7 @@ function App() {
         />
       )}
       {imagePreview && <ImagePreviewModal image={imagePreview} onClose={() => setImagePreview(null)} />}
+      {productNamePreview && <ProductNameModal name={productNamePreview} onClose={() => setProductNamePreview("")} />}
       {contactStoreId && (
         <ContactModal
           store={stores.find((store) => store.id === contactStoreId)}
@@ -2287,6 +2309,7 @@ function QuickItemCard({
   photoMissing,
   eligibility,
   onPreview,
+  onNameClick,
   onBarcode,
   onOpenDetail,
   onPhoto,
@@ -2301,6 +2324,7 @@ function QuickItemCard({
   photoMissing: boolean;
   eligibility: ReturnType<typeof getPriceEligibility>;
   onPreview: (src: string, title: string) => void;
+  onNameClick: () => void;
   onBarcode: () => void;
   onOpenDetail: () => void;
   onPhoto: (type: Extract<PhotoType, "PRODUCT_DISPLAY" | "PRODUCT_INFO_BARCODE">, file: File) => Promise<void>;
@@ -2329,7 +2353,7 @@ function QuickItemCard({
         <h2 className="item-title">
           <span className="item-code">{item.itemNo}</span>
           <span className="quick-title-text">
-            <span className="quick-product-line"><span>{item.productName}</span><a className="image-search-button" href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(item.productName)}`} target="_blank" aria-label={`${item.productName} 이미지 검색`} onClick={(event) => event.stopPropagation()}><Search size={15} /></a></span>
+            <span className="quick-product-line"><button type="button" className="product-name-button" title={`${item.productName} · 눌러서 전체 이름 보기`} onClick={onNameClick}>{item.productName}</button><a className="image-search-button" href={`https://www.google.com/search?tbm=isch&q=${encodeURIComponent(item.productName)}`} target="_blank" aria-label={`${item.productName} 이미지 검색`} onClick={(event) => event.stopPropagation()}><Search size={15} /></a></span>
             <button type="button" className="quick-barcode-link" onClick={onBarcode}>{item.barcode || "-"}</button>
           </span>
         </h2>
@@ -2408,6 +2432,20 @@ function ImagePreviewModal({ image, onClose }: { image: { src: string; title: st
         <div className="image-preview-frame">
           <img src={image.src} alt={image.title} />
         </div>
+      </section>
+    </div>
+  );
+}
+
+function ProductNameModal({ name, onClose }: { name: string; onClose: () => void }) {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="product-name-title" onClick={onClose}>
+      <section className="modal product-name-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="modal-head">
+          <div><h2 id="product-name-title">품목명 전체보기</h2></div>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="닫기"><X size={20} /></button>
+        </div>
+        <p className="product-name-full">{name}</p>
       </section>
     </div>
   );
