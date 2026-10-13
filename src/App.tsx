@@ -16,6 +16,8 @@ type StoreSort = "이름 순" | "품목 많은 순" | "미완료 많은 순" | "
 type ItemSort = "기본 순" | "물품코드 순";
 type WorkspaceMode = "list" | "map";
 type ItemListMode = "quick" | "barcode";
+type BarcodeReviewChoice = "match" | "mismatch" | "retry";
+type QuickPhotoSaveResult = "saved" | "retry";
 type ConfirmState = {
   title: string;
   message: string;
@@ -587,10 +589,12 @@ function App() {
   const [geocoding, setGeocoding] = useState(false);
   const [photosReady, setPhotosReady] = useState(false);
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
+  const [barcodeReviewMessage, setBarcodeReviewMessage] = useState("");
   const [storeStatusDraft, setStoreStatusDraft] = useState<StoreOperatingStatus | "">("");
   const [storeStatusMessage, setStoreStatusMessage] = useState("");
   const [storeResetMenuOpen, setStoreResetMenuOpen] = useState(false);
   const confirmResolver = useRef<((value: boolean) => void) | null>(null);
+  const barcodeReviewResolver = useRef<((value: BarcodeReviewChoice) => void) | null>(null);
   const locatePromiseRef = useRef<Promise<{ latitude: number; longitude: number } | null> | null>(null);
   const initialLocationRequested = useRef(false);
   const historyReadyRef = useRef(false);
@@ -817,6 +821,19 @@ function App() {
     confirmResolver.current?.(value);
     confirmResolver.current = null;
     setConfirmState(null);
+  }
+
+  function askBarcodeReview(message: string) {
+    return new Promise<BarcodeReviewChoice>((resolve) => {
+      barcodeReviewResolver.current = resolve;
+      setBarcodeReviewMessage(message);
+    });
+  }
+
+  function closeBarcodeReview(value: BarcodeReviewChoice) {
+    barcodeReviewResolver.current?.(value);
+    barcodeReviewResolver.current = null;
+    setBarcodeReviewMessage("");
   }
 
   async function refresh(region = currentRegion) {
@@ -1238,7 +1255,7 @@ function App() {
     return true;
   }
 
-  async function saveQuickItemPhoto(item: SurveyItem, type: Extract<PhotoType, "PRODUCT_DISPLAY" | "PRODUCT_INFO_BARCODE">, file: File) {
+  async function saveQuickItemPhoto(item: SurveyItem, type: Extract<PhotoType, "PRODUCT_DISPLAY" | "PRODUCT_INFO_BARCODE">, file: File): Promise<QuickPhotoSaveResult> {
     const resized = await resizePhoto(file);
     const previous = photos.filter((photo) => photo.itemId === item.id && photo.type === type);
     await Promise.all(previous.map((photo) => deletePhoto(photo.id)));
@@ -1255,6 +1272,9 @@ function App() {
     };
     await putPhoto(photo);
     if (type === "PRODUCT_INFO_BARCODE") {
+      const uncheckedItem = { ...item, barcodeMatch: "" as const, updatedAt: now() };
+      await putItem(uncheckedItem);
+      let reviewMessage = "";
       try {
         const detected = await detectBarcodeFromFile(file);
         const expected = onlyDigits(item.barcode);
@@ -1276,14 +1296,30 @@ function App() {
               setSelectedItemId(item.id);
               setView("item");
             }
-            return;
+            return "saved";
           }
+          await refresh(item.region);
+          return "saved";
         }
+        reviewMessage = !detected.supported
+          ? "이 기기에서는 바코드 자동 인식을 지원하지 않습니다. 제품의 바코드가 조사표와 일치하는지 직접 확인해 주세요."
+          : !expected
+            ? "조사표에 기준 바코드가 없어 자동으로 비교하지 못했습니다. 직접 확인해 주세요."
+            : "사진에서 바코드를 인식하지 못했습니다. 제품의 바코드가 조사표와 일치하는지 직접 확인해 주세요.";
       } catch (error) {
         console.warn("빠른입력 바코드 인식 실패", error);
+        reviewMessage = "바코드 자동 인식 중 오류가 발생했습니다. 제품의 바코드가 조사표와 일치하는지 직접 확인해 주세요.";
       }
+      const choice = await askBarcodeReview(reviewMessage);
+      if (choice === "retry") {
+        await deletePhoto(photo.id);
+        await refresh(item.region);
+        return "retry";
+      }
+      await putItem({ ...item, barcodeMatch: choice === "match" ? "O" : "X", updatedAt: now() });
     }
     await refresh(item.region);
+    return "saved";
   }
 
   async function deleteQuickItemPhoto(photo: SurveyPhoto) {
@@ -2219,6 +2255,7 @@ function App() {
         />
       )}
       {confirmState && <ConfirmDialog state={confirmState} onClose={closeConfirm} />}
+      {barcodeReviewMessage && <BarcodeReviewDialog message={barcodeReviewMessage} onClose={closeBarcodeReview} />}
       {appBackToast && <div className="save-toast">{appBackToast}</div>}
       {summaryOpen && view === "regions" && (
         <SummaryModal
@@ -2337,7 +2374,7 @@ function QuickItemCard({
   onNameClick: () => void;
   onBarcode: () => void;
   onOpenDetail: () => void;
-  onPhoto: (type: Extract<PhotoType, "PRODUCT_DISPLAY" | "PRODUCT_INFO_BARCODE">, file: File) => Promise<void>;
+  onPhoto: (type: Extract<PhotoType, "PRODUCT_DISPLAY" | "PRODUCT_INFO_BARCODE">, file: File) => Promise<QuickPhotoSaveResult>;
   onDeletePhoto: (photo: SurveyPhoto) => Promise<void>;
   onQuickSave: (normalPrice: number | null) => Promise<void>;
 }) {
@@ -2355,7 +2392,7 @@ function QuickItemCard({
     }
   };
   const uploadQuickPhoto = async (type: Extract<PhotoType, "PRODUCT_DISPLAY" | "PRODUCT_INFO_BARCODE">, file: File) => {
-    await onPhoto(type, file);
+    return onPhoto(type, file);
   };
   return (
     <article id={`item-card-${item.id}`} className={`card compact item-card quick-item-card ${focused ? "focused" : ""} ${item.status === "완료" ? "completed" : ""}`} key={item.id}>
@@ -2406,12 +2443,15 @@ function QuickItemCard({
   );
 }
 
-function QuickPhotoBox({ label, photo, onFile, onDelete }: { label: string; photo?: SurveyPhoto; onFile: (file: File) => void | Promise<void>; onDelete: () => void | Promise<void> }) {
+function QuickPhotoBox({ label, photo, onFile, onDelete }: { label: string; photo?: SurveyPhoto; onFile: (file: File) => void | QuickPhotoSaveResult | Promise<void | QuickPhotoSaveResult>; onDelete: () => void | Promise<void> }) {
   const inputId = useRef(uid("quick_photo"));
+  const inputRef = useRef<HTMLInputElement>(null);
   const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0];
     event.currentTarget.value = "";
-    if (file) await onFile(file);
+    if (!file) return;
+    const result = await onFile(file);
+    if (result === "retry") inputRef.current?.click();
   };
   return (
     <div className={`quick-photo-box ${photo ? "uploaded" : ""}`}>
@@ -2422,7 +2462,7 @@ function QuickPhotoBox({ label, photo, onFile, onDelete }: { label: string; phot
           <button type="button" className="quick-photo-delete" onClick={onDelete} aria-label={`${label} 삭제`}><X size={14} /></button>
         </div>
       ) : (
-        <label className="quick-upload-button" htmlFor={inputId.current}><Upload size={14} />업로드<input id={inputId.current} type="file" accept="image/*" onChange={handleFile} /></label>
+        <label className="quick-upload-button" htmlFor={inputId.current}><Upload size={14} />업로드<input ref={inputRef} id={inputId.current} type="file" accept="image/*" onChange={handleFile} /></label>
       )}
     </div>
   );
@@ -2593,6 +2633,24 @@ function ConfirmDialog({ state, onClose }: { state: ConfirmState; onClose: (valu
         <div className="confirm-actions">
           <button onClick={() => onClose(false)}>{state.cancelText ?? "취소"}</button>
           <button className={state.danger ? "danger" : "primary"} onClick={() => onClose(true)}>{state.confirmText ?? "확인"}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function BarcodeReviewDialog({ message, onClose }: { message: string; onClose: (value: BarcodeReviewChoice) => void }) {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="barcode-review-title">
+      <section className="modal confirm-dialog">
+        <div className="confirm-message">
+          <p id="barcode-review-title">바코드 확인 필요</p>
+          <p>{message}</p>
+        </div>
+        <div className="confirm-actions barcode-review-actions">
+          <button type="button" onClick={() => onClose("retry")}>다시 촬영</button>
+          <button type="button" className="danger" onClick={() => onClose("mismatch")}>불일치</button>
+          <button type="button" className="primary" onClick={() => onClose("match")}>일치</button>
         </div>
       </section>
     </div>

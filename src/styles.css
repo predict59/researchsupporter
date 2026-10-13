@@ -870,6 +870,9 @@ textarea { min-height: 110px; resize: vertical; }
 .confirm-actions button {
   width: 100%;
 }
+.barcode-review-actions {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
 .sort-control {
   display: grid;
   grid-template-columns: 80px minmax(180px, 280px);
