@@ -1,7 +1,7 @@
-const CACHE_NAME = "mw-price-survey-v32";
+const CACHE_NAME = "mw-price-survey-v33";
 const BASE_PATH = new URL(self.registration.scope).pathname.replace(/\/$/, "");
 const path = (value) => `${BASE_PATH}${value}`;
-const APP_SHELL = [path("/"), path("/index.html"), path("/manifest.json"), path("/pwa-icon.svg"), path("/data/barcode_product_reference.xlsx?v=20261013")];
+const APP_SHELL = [path("/"), path("/index.html"), path("/manifest.json"), path("/pwa-icon.svg"), path("/data/barcode_product_reference.xlsx?v=20261013-bbbfa8a0")];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
