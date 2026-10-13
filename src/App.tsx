@@ -1,4 +1,5 @@
 import { Camera, CheckCircle2, ChevronDown, ChevronUp, Download, Menu, MoreVertical, Phone, SlidersHorizontal, Search, Upload, X } from "lucide-react";
+import JsBarcode from "jsbarcode";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import { clearAllData, deletePhoto, getBarcodeIndex, getItems, getPhotos, getPhotosByRegion, getPhotosByStore, getRegions, getSettings, getStores, importAllData, now, putItem, putPhoto, putStore, saveBarcodeIndex, saveParsedData, saveSettings, today, uid } from "./db";
@@ -114,8 +115,7 @@ const PHOTO_MIN_EDGE = 760;
 const PHOTO_QUALITY_STEPS = [0.72, 0.64, 0.56, 0.48, 0.4, 0.32];
 const PRICE_DIFF_WARN_PERCENT = 30;
 const TARGET_MAP_URL = "https://www.google.com/maps/d/u/1/edit?mid=1ej99Lo6WS4GROBCQPr0a66MhQR_vXuM&usp=sharing";
-const PRODUCT_IMAGE_REFERENCE_FILE = `${import.meta.env.BASE_URL}data/barcode_product_reference.xlsx`;
-const BARCODE_IMAGE_INDEX_FILE = `${import.meta.env.BASE_URL}data/barcode_image_index.json?v=20260721-barcode-number`;
+const PRODUCT_IMAGE_REFERENCE_FILE = `${import.meta.env.BASE_URL}data/barcode_product_reference.xlsx?v=20261013`;
 type BarcodeImageIndex = Record<string, string>;
 type ProductImageReferenceIndex = { byItemNo: Record<string, ProductImageReference>; byBarcode: Record<string, ProductImageReference> };
 type PriceCandidate = { value: number; score: number; source: "comma" | "plain" };
@@ -194,10 +194,43 @@ const formatDistance = (km?: number) => {
   if (km === undefined) return "";
   return km < 1 ? `${Math.round(km * 1000)}m` : `${km.toFixed(km < 10 ? 1 : 0)}km`;
 };
+const generatedBarcodeCache = new Map<string, string>();
+const generatedBarcodeImageSrc = (value: string) => {
+  const barcode = onlyDigits(value);
+  if (!barcode || typeof document === "undefined") return "";
+  const cached = generatedBarcodeCache.get(barcode);
+  if (cached) return cached;
+  const formats = barcode.length === 13 ? ["EAN13", "CODE128"]
+    : barcode.length === 12 ? ["UPC", "CODE128"]
+      : barcode.length === 8 ? ["EAN8", "CODE128"]
+        : ["CODE128"];
+  for (const format of formats) {
+    try {
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      JsBarcode(svg, barcode, {
+        format,
+        displayValue: true,
+        background: "#ffffff",
+        lineColor: "#111111",
+        width: 2,
+        height: 56,
+        margin: 8,
+        fontSize: 15,
+        textMargin: 3,
+      });
+      const source = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg.outerHTML)}`;
+      generatedBarcodeCache.set(barcode, source);
+      return source;
+    } catch {
+      // Invalid EAN/UPC check digits fall back to Code 128.
+    }
+  }
+  return "";
+};
 const barcodeImageSrc = (item: SurveyItem, index: BarcodeImageIndex) => {
   const path = index[onlyDigits(item.barcode)];
-  if (!path) return "";
-  return path.startsWith("data:") ? path : `${import.meta.env.BASE_URL}${path}`;
+  if (path) return path.startsWith("data:") ? path : `${import.meta.env.BASE_URL}${path}`;
+  return generatedBarcodeImageSrc(item.barcode);
 };
 const linkedImageSrc = (url?: string) => {
   const value = (url ?? "").trim();
@@ -672,14 +705,9 @@ function App() {
   }, [view, workspaceMode, canUseStoreMap]);
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
-      fetch(BARCODE_IMAGE_INDEX_FILE, { cache: "no-cache" })
-        .then((response) => response.ok ? response.json() as Promise<BarcodeImageIndex> : {})
-        .catch(() => ({})),
-      getBarcodeIndex().catch(() => ({})),
-    ])
-      .then(([bundled, saved]) => {
-        if (!cancelled) setBarcodeIndex({ ...(saved as BarcodeImageIndex), ...(bundled ?? {}) });
+    getBarcodeIndex()
+      .then((saved) => {
+        if (!cancelled) setBarcodeIndex(saved);
       })
       .catch(() => {
         if (!cancelled) setBarcodeIndex({});
@@ -690,7 +718,7 @@ function App() {
   }, []);
   useEffect(() => {
     let cancelled = false;
-    fetch(PRODUCT_IMAGE_REFERENCE_FILE, { cache: "force-cache" })
+    fetch(PRODUCT_IMAGE_REFERENCE_FILE, { cache: "no-cache" })
       .then((response) => {
         if (!response.ok) throw new Error(`product image reference file not found: ${response.status}`);
         return response.arrayBuffer();
@@ -955,8 +983,8 @@ function App() {
   }, [view, selectedStoreId, visibleRegionStores.length]);
 
   async function analyzeUploadedFiles() {
-    if (!surveyFile || !contactFile) {
-      setUploadMessage("조사표와 업체 연락처 엑셀 파일을 선택해 주세요.");
+    if (!surveyFile) {
+      setUploadMessage("조사표 엑셀 파일을 선택해 주세요.");
       return;
     }
     if (regions.length || stores.length || items.length || photos.length) {
@@ -976,9 +1004,11 @@ function App() {
       const parsed = await parseSurveyWorkbook(surveyFile);
       let parsedItems = parsed.items;
       let matched = 0;
-      const before = parsedItems.filter((item) => item.companyTel).length;
-      parsedItems = mergeContacts(parsedItems, await parseContactRows(contactFile));
-      matched = parsedItems.filter((item) => item.companyTel).length - before;
+      if (contactFile) {
+        const before = parsedItems.filter((item) => item.companyTel).length;
+        parsedItems = mergeContacts(parsedItems, await parseContactRows(contactFile));
+        matched = parsedItems.filter((item) => item.companyTel).length - before;
+      }
       const rebuilt = rebuildStoresAndRegions(parsedItems);
       parsedItems = rebuilt.items;
       const parsedStores = rebuilt.stores.map((store) => {
@@ -987,7 +1017,10 @@ function App() {
       });
       await clearAllData();
       await saveParsedData(rebuilt.regions, parsedStores, parsedItems);
-      setUploadMessage(`분석 완료: 전체 품목 ${parsedItems.length.toLocaleString()}개 / 지역 ${rebuilt.regions.length}개 / 매장 ${parsedStores.length}개 / 연락처 매칭 ${Math.max(0, matched)}개`);
+      const contactSummary = contactFile
+        ? `추가 연락처 매칭 ${Math.max(0, matched)}개`
+        : `조사표 내 연락처 ${parsedItems.filter((item) => item.companyTel).length.toLocaleString()}개 사용`;
+      setUploadMessage(`분석 완료: 전체 품목 ${parsedItems.length.toLocaleString()}개 / 지역 ${rebuilt.regions.length}개 / 매장 ${parsedStores.length}개 / ${contactSummary}`);
       await refresh(undefined);
       setView("regions");
     } catch (error) {
@@ -1720,10 +1753,10 @@ function App() {
           <section className="upload-hero">
             <span>자료 업로드</span>
             <h1>조사 작업환경 만들기</h1>
-            <p>조사표와 업체 연락처 엑셀 파일을 입력하면 지역, 매장, 물품 목록이 이 기기의 브라우저 저장공간에 생성됩니다. 서버 DB와 자동 동기화되지 않으므로 다른 기기에서 이어서 작업하려면 전체 백업 파일로 복원해 주세요.</p>
+            <p>조사표 엑셀 파일을 입력하면 지역, 매장, 물품 목록이 이 기기의 브라우저 저장공간에 생성됩니다. 별도 업체 연락처 파일이 있을 때만 추가로 선택하세요. 서버 DB와 자동 동기화되지 않으므로 다른 기기에서 이어서 작업하려면 전체 백업 파일로 복원해 주세요.</p>
             <ul className="upload-notes">
-              <li>조사표와 업체 연락처는 필수입니다.</li>
-              <li>바코드 이미지는 앱에 포함된 기본 참조자료를 사용합니다.</li>
+              <li>조사표만 필수이며, 조사표에 업체연락처가 있으면 그대로 사용합니다.</li>
+              <li>상품사진은 앱의 최신 기준자료를 사용하고, 바코드 이미지는 바코드 숫자로 자동 생성합니다.</li>
               <li>새 자료를 다시 분석하면 기존 입력 데이터가 초기화될 수 있으니 필요하면 먼저 전체 백업을 내려받아 주세요.</li>
             </ul>
           </section>
@@ -1755,9 +1788,9 @@ function App() {
                 <span>{surveyFile?.name ?? "선택된 파일 없음"}</span>
               </label>
               <label className="file-card">
-                <strong>2. 업체 연락처 엑셀</strong>
+                <strong>2. 업체 연락처 엑셀 (선택)</strong>
                 <input type="file" accept=".xlsx,.xls" onChange={(event) => setContactFile(event.target.files?.[0] ?? null)} />
-                <span>{contactFile?.name ?? "선택된 파일 없음"}</span>
+                <span>{contactFile?.name ?? "별도 연락처 파일이 없으면 선택하지 않아도 됩니다."}</span>
               </label>
               <button className="primary analyze-button" onClick={analyzeUploadedFiles} disabled={isAnalyzing}>{isAnalyzing ? "자료 분석 중..." : "자료 분석 시작"}</button>
               {uploadMessage && <p className="notice">{uploadMessage}</p>}
@@ -2709,7 +2742,7 @@ function StoreMapView({ stores, statsByStore, userLocation, locationFocusTick, f
 
   useEffect(() => {
     let cancelled = false;
-    let fallbackTimer: ReturnType<typeof window.setTimeout> | null = null;
+    let fallbackTimer: number | null = null;
     import("leaflet").then((leaflet) => {
       if (cancelled || !mapNode.current || leafletMap.current) return;
       const map = leaflet.map(mapNode.current, {
