@@ -908,6 +908,14 @@ textarea { min-height: 110px; resize: vertical; }
   color: #334155;
   font-size: 14px;
   line-height: 1.45;
+
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .region-actions {
   display: grid;

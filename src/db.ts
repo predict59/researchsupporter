@@ -1,10 +1,16 @@
 import { openDB } from "idb";
 import type { AppSettings, Region, SurveyFileRecord, SurveyItem, SurveyPhoto, SurveyStore } from "./types";
 
-const DB_NAME = "research-supporter-v2";
+const DB_NAME = "research-supporter-v5";
 const DB_VERSION = 1;
 
-export const today = () => new Date().toISOString().slice(0, 10);
+export const today = () => {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
 export const now = () => new Date().toISOString();
 export const uid = (prefix: string) => `${prefix}_${crypto.randomUUID()}`;
 

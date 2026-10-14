@@ -1045,7 +1045,7 @@ function App() {
         parsedItems = mergeContacts(parsedItems, await parseContactRows(contactFile));
         matched = parsedItems.filter((item) => item.companyTel).length - before;
       }
-      const rebuilt = rebuildStoresAndRegions(parsedItems);
+      const rebuilt = rebuildStoresAndRegions(parsedItems, parsed.regions);
       parsedItems = rebuilt.items;
       const parsedStores = rebuilt.stores.map((store) => {
         const first = parsedItems.find((item) => item.storeId === store.id);
@@ -1892,8 +1892,11 @@ function App() {
                       </div>
                     </details>
                   </div>
-                  <p className="area-summary">{region.areaSummary || region.city || "-"}</p>
-                  <p className="muted">담당부서: {region.department || "-"}</p>
+                  {region.areaSummary && (
+                      <p className="area-summary" title={region.areaSummary}>
+                        {region.areaSummary}
+                      </p>
+                    )}
                   <RegionSummary
                     stats={summary.total ? summary : emptyStats}
                     itemStats={allItemStats}
