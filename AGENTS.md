@@ -13,4 +13,5 @@ This repository is the production source for the price research support PWA.
 - A push to `main` triggers `.github/workflows/deploy.yml` and publishes `dist` to the `gh-pages` branch.
 - Do not commit `node_modules` or `dist`.
 - Browser survey records and photos live in IndexedDB; source deployment does not upload or migrate a user's field data.
-- In the Predict deployment, `src/db.ts` must keep `DB_NAME` as `research-supporter-v2`. When copying code between Predict and KPRC in either direction, preserve each repository's existing `DB_NAME`; never overwrite it as part of a sync.
+- In the Predict deployment, `src/db.ts` must keep `DB_NAME` as `research-supporter-v2` and `vite.config.js` must keep `base` as `/researchsupporter/`. When copying code between Predict and KPRC in either direction, preserve each repository's existing `DB_NAME` and Vite `base`; never overwrite either value as part of a sync.
+- Run `npm run verify:invariants` after any repository-to-repository sync. A failure means a Predict-only storage or deployment-path invariant was overwritten and must be restored before building or publishing.

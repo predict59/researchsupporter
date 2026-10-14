@@ -51,7 +51,9 @@
 
 ## 4. IndexedDB 구조
 
-Predict 배포의 IndexedDB 이름은 `research-supporter-v2`로 고정한다. 이 값은 기존 현장 조사 데이터와 사진이 저장된 공간을 가리키므로 KPRC와 코드를 주고받거나 저장소 전체를 동기화할 때도 변경하지 않는다. 저장소별 DB 이름은 각 배포의 데이터 호환 경계로 취급한다.
+Predict 배포의 IndexedDB 이름은 `research-supporter-v2`, Vite base 경로는 `/researchsupporter/`로 고정한다. DB 이름은 기존 현장 조사 데이터와 사진이 저장된 공간을 가리키고 base 경로는 Predict GitHub Pages 자산 주소를 결정하므로, KPRC와 코드를 주고받거나 저장소 전체를 동기화할 때도 두 값을 변경하지 않는다. 저장소별 DB 이름과 base 경로는 각 배포의 호환 경계로 취급한다.
+
+`npm run verify:invariants`는 위 두 값이 Predict 기준과 다른 경우 실패한다. 기본 빌드가 이 검증을 먼저 실행하므로 동기화 실수 상태로 배포하지 않도록 차단한다.
 
 주요 object store:
 

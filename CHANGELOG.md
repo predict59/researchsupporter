@@ -5,6 +5,14 @@
 
 ## 2026-10-15
 
+### Predict 저장소 전용 DB·배포 경로 자동 검증
+
+- 커밋 메시지: `Guard Predict repository invariants`
+- KPRC와 Predict 사이에서 코드를 복사할 때 Predict의 IndexedDB 이름 `research-supporter-v2`와 Vite base `/researchsupporter/`를 모두 유지하도록 작업 규칙을 보강했습니다.
+- `npm run verify:invariants`를 추가하고 기본 빌드보다 먼저 실행해 두 값 중 하나라도 바뀌면 배포 빌드를 실패시킵니다.
+- 프로젝트 현황 문서와 코드 주석에 저장소별 예외 규칙을 기록했습니다.
+- 앱 기능과 데이터 구조에는 변화가 없으며 서비스워커 캐시는 그대로 유지합니다.
+
 ### Predict IndexedDB 이름 복구 및 동기화 보호 규칙 추가
 
 - 커밋 메시지: `Restore Predict IndexedDB compatibility`

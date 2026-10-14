@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "dev:local": "vite --host 0.0.0.0 --base /",
-    "build": "tsc && vite build",
+    "verify:invariants": "node scripts/verify-repository-invariants.mjs",
+    "build": "npm run verify:invariants && tsc && vite build",
     "preview": "vite preview",
     "preview:local": "vite preview --host 0.0.0.0 --base /",
     "sync": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sync-github.ps1"
