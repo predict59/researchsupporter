@@ -5,6 +5,14 @@
 
 ## 2026-10-15
 
+### Predict IndexedDB 이름 복구 및 동기화 보호 규칙 추가
+
+- 커밋 메시지: `Restore Predict IndexedDB compatibility`
+- Predict 앱의 IndexedDB 이름을 기존 현장 데이터가 저장된 `research-supporter-v2`로 복구해 기존 지역·매장·물품·사진을 다시 읽도록 했습니다.
+- KPRC와 Predict 사이에서 코드를 어느 방향으로 복사하더라도 저장소별 `DB_NAME`은 덮어쓰지 않는 규칙을 저장소 작업 지침과 프로젝트 현황 문서에 추가했습니다.
+- 잘못 생성된 새 이름의 빈 IndexedDB는 삭제하지 않으며, 앱은 기존 `research-supporter-v2`만 사용합니다.
+- 데이터 구조 변환은 없고 서비스워커 캐시를 `v39`로 올렸습니다. 롤백 시 기존 데이터가 다시 보이지 않을 수 있으므로 DB 이름 변경은 금지합니다.
+
 ### 빠른입력 사진 버튼을 후면 카메라로 바로 연결
 
 - 커밋 메시지: `Open camera directly for quick photos`

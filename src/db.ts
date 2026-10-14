@@ -1,7 +1,8 @@
 import { openDB } from "idb";
 import type { AppSettings, Region, SurveyFileRecord, SurveyItem, SurveyPhoto, SurveyStore } from "./types";
 
-const DB_NAME = "researchsupporter";
+// Predict 배포의 기존 현장 데이터를 계속 사용해야 하므로 저장소 간 코드 동기화 시에도 바꾸지 않는다.
+const DB_NAME = "research-supporter-v2";
 const DB_VERSION = 1;
 
 export const today = () => {
