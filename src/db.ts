@@ -1,7 +1,7 @@
 import { openDB } from "idb";
 import type { AppSettings, Region, SurveyFileRecord, SurveyItem, SurveyPhoto, SurveyStore } from "./types";
 
-const DB_NAME = "research-supporter-v5";
+const DB_NAME = "researchsupporter";
 const DB_VERSION = 1;
 
 export const today = () => {
