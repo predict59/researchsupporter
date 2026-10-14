@@ -2465,7 +2465,7 @@ function QuickPhotoBox({ label, photo, onFile, onDelete }: { label: string; phot
           <button type="button" className="quick-photo-delete" onClick={onDelete} aria-label={`${label} 삭제`}><X size={14} /></button>
         </div>
       ) : (
-        <label className="quick-upload-button" htmlFor={inputId.current}><Upload size={14} />업로드<input ref={inputRef} id={inputId.current} type="file" accept="image/*" onChange={handleFile} /></label>
+        <label className="quick-upload-button" htmlFor={inputId.current}><Camera size={14} />촬영<input ref={inputRef} id={inputId.current} type="file" accept="image/*" capture="environment" onChange={handleFile} /></label>
       )}
     </div>
   );
